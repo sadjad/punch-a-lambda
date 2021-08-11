@@ -30,8 +30,11 @@ set ( ALL_LIBS
   starter
 )
 
-# add_executable ( executable-name src/frontend/executable.cc )
-# target_link_libraries( executable-name ${ALL_LIBS} )
+add_executable ( coordinator src/frontend/coordinator.cc )
+target_link_libraries( coordinator ${ALL_LIBS} )
+
+add_executable ( lambdafunc src/frontend/lambdafunc.cc )
+target_link_libraries( lambdafunc ${ALL_LIBS} )
 
 # Flags for building static binaries for AWS Lambda
 # set ( STATIC_LINK_FLAGS dl z unwind lzma -static -Wl,-allow-multiple-definition

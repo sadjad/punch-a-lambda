@@ -21,3 +21,15 @@ void split( const string_view str,
 
   ret.emplace_back( str.substr( field_start ) );
 }
+
+void split( const string_view str, const char ch_to_find, vector<string>& ret )
+{
+  ret.clear();
+
+  vector<string_view> tokens;
+  split( str, ch_to_find, tokens );
+
+  for ( auto& token : tokens ) {
+    ret.emplace_back( token );
+  }
+}
