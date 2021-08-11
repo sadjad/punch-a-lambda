@@ -73,10 +73,6 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
       break;
     }
     response += buffer;
-
-    if ( response.find( "addresses" ) != string::npos ) {
-      break;
-    }
   }
 
   vector<string_view> peer_ips_strs;
