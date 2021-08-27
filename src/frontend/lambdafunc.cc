@@ -66,13 +66,22 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
   master_socket.write_all( msg );
 
   string response {};
-  string buffer( 1024, '\0' );
+  string buffer( 1024 * 1024, '\0' );
 
-  while ( true ) {
-    if ( not master_socket.read( { buffer } ) ) {
+  while( true ) {
+    auto len = master_socket.read( { buffer } );
+
+    if ( not len ) {
       break;
     }
-    response += buffer;
+
+    if ( buffer.substr( 0, len ).find( ";END" ) != string::npos ) {
+      response += buffer.substr( 0, len - 4 );
+      break;
+    }
+    else {
+      response += buffer.substr( 0, len );
+    }
   }
 
   vector<string_view> peer_ips_strs;
@@ -175,7 +184,7 @@ int main( int argc, char* argv[] )
     },
     [] { return true; } );
 
-  TimerFD termination_timer { seconds { 30 } };
+  TimerFD termination_timer { seconds { 10 } };
 
   loop.add_rule(
     "termination",
