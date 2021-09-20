@@ -14,6 +14,8 @@
 using namespace std;
 using namespace std::chrono;
 
+ofstream fout { "out" };
+
 enum class WorkerType
 {
   Send,
@@ -26,6 +28,8 @@ struct Worker
   Address addr;
   TCPSocket socket {};
   WorkerType type;
+
+  size_t bytes_transferred {0};
 
   Worker( const size_t thread_id_,
           const Address& addr_,
@@ -51,7 +55,8 @@ string generate_random_buffer( const size_t len )
 
 map<size_t, string> get_peer_addresses( const uint32_t thread_id,
                                         const string& master_ip,
-                                        const uint16_t master_port )
+                                        const uint16_t master_port,
+                                        const uint32_t block_dim )
 {
   map<size_t, string> peers;
 
@@ -96,10 +101,13 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
     const string& ip = id_ip[1];
 
     if ( id == thread_id ) {
+      fout << "public_addr=" << ip << " (" << thread_id << ")" << endl;
       continue;
     }
 
-    cout << "peer[" << id << "]: " << ip << endl;
+    if ( ( id % block_dim ) != ( thread_id % block_dim ) ) {
+      continue;
+    }
 
     peers.emplace( id, ip );
   }
@@ -116,18 +124,19 @@ int main( int argc, char* argv[] )
     return EXIT_FAILURE;
   }
 
-  ofstream fout { "out" };
+  // ofstream fout { "out" };
 
   EventLoop loop;
 
   const string master_ip { argv[1] };
   const uint16_t master_port = static_cast<uint16_t>( stoul( argv[2] ) );
   const uint32_t thread_id = static_cast<uint32_t>( stoul( argv[3] ) );
+  const uint32_t block_dim = static_cast<uint32_t>( stoul( argv[4] ) );
 
   list<Worker> peers;
 
   for ( auto& [peer_id, peer_ip] :
-        get_peer_addresses( thread_id, master_ip, master_port ) ) {
+        get_peer_addresses( thread_id, master_ip, master_port, block_dim ) ) {
     peers.emplace(
       peers.end(),
       peer_id,
@@ -156,9 +165,9 @@ int main( int argc, char* argv[] )
     peer.socket.set_blocking( false );
     peer.socket.connect( peer.addr );
 
-    fout << "peer[" << peer.thread_id
+    /* fout << "peer[" << peer.thread_id
          << "]: " << ( peer.type == WorkerType::Send ? "(send)" : "(recv)" )
-         << endl;
+         << endl; */
 
     loop.add_rule(
       "peer"s + to_string( peer.thread_id ),
@@ -166,7 +175,8 @@ int main( int argc, char* argv[] )
       [&] { bytes_recv += peer.socket.read( { read_buffer } ); },
       [&] { return peer.type == WorkerType::Send; },
       [&] { bytes_sent += peer.socket.write( send_buffer ); },
-      [&] { return peer.type == WorkerType::Recv; } );
+      [&] { return peer.type == WorkerType::Recv; },
+      [&] { fout << "peer died " << peer.thread_id << endl; } );
   }
 
   bool terminated = false;
