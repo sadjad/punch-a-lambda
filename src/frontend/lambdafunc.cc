@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -29,7 +30,7 @@ struct Worker
   TCPSocket socket {};
   WorkerType type;
 
-  size_t bytes_transferred {0};
+  size_t bytes_transferred { 0 };
 
   Worker( const size_t thread_id_,
           const Address& addr_,
@@ -73,7 +74,7 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
   string response {};
   string buffer( 1024 * 1024, '\0' );
 
-  while( true ) {
+  while ( true ) {
     auto len = master_socket.read( { buffer } );
 
     if ( not len ) {
@@ -83,8 +84,7 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
     if ( buffer.substr( 0, len ).find( ";END" ) != string::npos ) {
       response += buffer.substr( 0, len - 4 );
       break;
-    }
-    else {
+    } else {
       response += buffer.substr( 0, len );
     }
   }
@@ -117,10 +117,10 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
 
 int main( int argc, char* argv[] )
 {
-  if ( argc != 5 ) {
+  if ( argc < 5 ) {
     cerr
-      << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim>"
-      << endl;
+      << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim> "
+      << "<active-worker>..." << endl;
     return EXIT_FAILURE;
   }
 
@@ -132,6 +132,16 @@ int main( int argc, char* argv[] )
   const uint16_t master_port = static_cast<uint16_t>( stoul( argv[2] ) );
   const uint32_t thread_id = static_cast<uint32_t>( stoul( argv[3] ) );
   const uint32_t block_dim = static_cast<uint32_t>( stoul( argv[4] ) );
+
+  set<uint32_t> send_workers;
+  set<uint32_t> recv_workers;
+  for ( int i = 5; i < argc; i++ ) {
+    if ( argv[i][0] == 'x' ) {
+      send_workers.insert( atoi( &argv[i][1] ) );
+    } else {
+      recv_workers.insert( atoi( argv[i] ) );
+    }
+  }
 
   list<Worker> peers;
 
@@ -164,7 +174,6 @@ int main( int argc, char* argv[] )
 
     peer.socket.set_blocking( false );
     peer.socket.connect( peer.addr );
-
     /* fout << "peer[" << peer.thread_id
          << "]: " << ( peer.type == WorkerType::Send ? "(send)" : "(recv)" )
          << endl; */
@@ -173,9 +182,15 @@ int main( int argc, char* argv[] )
       "peer"s + to_string( peer.thread_id ),
       peer.socket,
       [&] { bytes_recv += peer.socket.read( { read_buffer } ); },
-      [&] { return peer.type == WorkerType::Send; },
+      [&] {
+        return peer.type == WorkerType::Send and recv_workers.count( thread_id )
+               and send_workers.count( peer.thread_id );
+      },
       [&] { bytes_sent += peer.socket.write( send_buffer ); },
-      [&] { return peer.type == WorkerType::Recv; },
+      [&] {
+        return peer.type == WorkerType::Recv and send_workers.count( thread_id )
+               and recv_workers.count( peer.thread_id );
+      },
       [&] { fout << "peer died " << peer.thread_id << endl; } );
   }
 
