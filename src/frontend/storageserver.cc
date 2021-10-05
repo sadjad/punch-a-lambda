@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <list>
 #include <set>
 #include <string>
 #include <string_view>
@@ -27,6 +28,7 @@ class StorageServer
     string send_buffer_;
     string read_buffer_;
     HTTPResponse response_;
+    std::list<TCPSocket> clients_;
   public:
     StorageServer(size_t size);
     void install_rules(EventLoop & event_loop);
@@ -87,22 +89,26 @@ void StorageServer::install_rules(EventLoop & event_loop)
     Direction::In,
     listener_socket_,
     [&]{
-      TCPSocket socket = listener_socket_.accept();
-      socket.set_blocking( false );
+      clients_.emplace_back( move( listener_socket_.accept() ) );
+      auto client_it = prev( clients_.end() );
+      
+      //client_it->set_blocking( false );
       std::cout << "accepted connection" << std::endl;
+
       event_loop.add_rule(
         "http",
-        socket,
-        [&] { int bytes_recv = socket.read( { read_buffer_ } ); std::cout << bytes_recv << std::endl; },
+        *client_it,
+        [&] { int bytes_recv = client_it->read( { read_buffer_ } ); std::cout << bytes_recv << std::endl; },
         [&] {
             return true; // how to check if the socket is readable?
         },
-        [&] { int bytes_sent = socket.write( send_buffer_ ); },
+        [&] { int bytes_sent = client_it->write( send_buffer_ ); },
         [&] {
             return true; // how to check if the socket is writeable?
         },
-        [&] {std::cout << "died" << std::endl;});
-      
+        [&] {std::cout << "died" << std::endl;
+          clients_.erase(client_it);
+        });
     },
     [&]{
       return true;
