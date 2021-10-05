@@ -11,11 +11,12 @@
 #include "util/eventloop.hh"
 #include "util/split.hh"
 #include "util/timerfd.hh"
+#include "storage/LocalStorage.hpp"
 
 using namespace std;
 using namespace std::chrono;
 
-ofstream fout { "out" };
+ofstream fout { "/tmp/out" };
 
 enum class WorkerType
 {
@@ -117,6 +118,9 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
 
 int main( int argc, char* argv[] )
 {
+
+  auto a = new LocalStorage(4096);
+  
   if ( argc < 5 ) {
     cerr
       << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim> "
@@ -209,7 +213,7 @@ int main( int argc, char* argv[] )
     },
     [] { return true; } );
 
-  TimerFD termination_timer { seconds { 10 } };
+  TimerFD termination_timer { seconds { 30 } };
 
   loop.add_rule(
     "termination",

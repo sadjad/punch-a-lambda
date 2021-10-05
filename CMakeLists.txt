@@ -23,11 +23,12 @@ include_directories ( src )
 
 add_library( starter STATIC
   ${SOURCE}
-  ${OPENSSL_LIBRARIES}
+
 )
 
 set ( ALL_LIBS
   starter
+  ${OPENSSL_LIBRARIES}
 )
 
 add_executable ( coordinator src/frontend/coordinator.cc )
@@ -36,6 +37,8 @@ target_link_libraries( coordinator ${ALL_LIBS} )
 add_executable ( lambdafunc src/frontend/lambdafunc.cc )
 target_link_libraries( lambdafunc ${ALL_LIBS} )
 
+add_executable ( storageserver src/frontend/storageserver.cc )
+target_link_libraries( storageserver ${ALL_LIBS} )
 # Flags for building static binaries for AWS Lambda
 # set ( STATIC_LINK_FLAGS dl z unwind lzma -static -Wl,-allow-multiple-definition
 #                         -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
