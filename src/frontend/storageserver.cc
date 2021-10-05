@@ -92,21 +92,22 @@ void StorageServer::install_rules(EventLoop & event_loop)
       clients_.emplace_back( move( listener_socket_.accept() ) );
       auto client_it = prev( clients_.end() );
       
-      //client_it->set_blocking( false );
+      client_it->set_blocking( false );
       std::cout << "accepted connection" << std::endl;
 
       event_loop.add_rule(
         "http",
         *client_it,
-        [&] { int bytes_recv = client_it->read( { read_buffer_ } ); std::cout << bytes_recv << std::endl; },
+        [&, client_it] { int bytes_recv = client_it->read( { read_buffer_ } ); std::cout << bytes_recv << std::endl; },
         [&] {
             return true; // how to check if the socket is readable?
         },
-        [&] { int bytes_sent = client_it->write( send_buffer_ ); },
+        [&, client_it] { int bytes_sent = client_it->write( send_buffer_ ); },
         [&] {
             return true; // how to check if the socket is writeable?
         },
-        [&] {std::cout << "died" << std::endl;
+        [&, client_it] {std::cout << "died" << std::endl;
+          client_it->close();
           clients_.erase(client_it);
         });
     },
