@@ -25,10 +25,11 @@ class StorageServer
     LocalStorage my_storage_;
     std::vector<EventLoop::RuleHandle> rules_ {};
     TCPSocket listener_socket_;
-    string send_buffer_;
-    string read_buffer_;
+    RingBuffer send_buffer_;
+    RingBuffer read_buffer_;
     HTTPResponse response_;
     std::list<TCPSocket> clients_;
+    std::list<std::string> outbound_messages_;
   public:
     StorageServer(size_t size);
     void install_rules(EventLoop & event_loop);
@@ -46,40 +47,9 @@ listener_socket_( [&]{
   listener_socket.listen();
   return listener_socket;
 }()),
-send_buffer_(1 * 1024 * 1024, '\0'),
-read_buffer_(1 * 1024 * 1024, '\0' )
+send_buffer_(4096),
+read_buffer_(4096)
 {}
-
-
-/*
-
- RuleHandle add_rule(
-    const size_t category_id,
-    const FileDescriptor& fd,
-    const CallbackT& in_callback,
-    const InterestT& in_interest,
-    const CallbackT& out_callback,
-    const InterestT& out_interest,
-    const CallbackT& cancel = [] {} );
-
-loop.add_rule(
-      "peer"s + to_string( peer.thread_id ),
-      peer.socket,
-      [&] { bytes_recv += peer.socket.read( { read_buffer } ); },
-      [&] {
-        return peer.type == WorkerType::Send and recv_workers.count( thread_id )
-               and send_workers.count( peer.thread_id );
-      },
-      [&] { bytes_sent += peer.socket.write( send_buffer ); },
-      [&] {
-        return peer.type == WorkerType::Recv and send_workers.count( thread_id )
-               and recv_workers.count( peer.thread_id );
-      },
-      [&] { fout << "peer died " << peer.thread_id << endl; } );
-*/
-
-
-
 
 void StorageServer::install_rules(EventLoop & event_loop)
 {
@@ -98,50 +68,58 @@ void StorageServer::install_rules(EventLoop & event_loop)
       event_loop.add_rule(
         "http",
         *client_it,
-        [&, client_it] { int bytes_recv = client_it->read( { read_buffer_ } ); std::cout << bytes_recv << std::endl; },
+        [&, client_it] { std::cout << "http read " << std::endl; read_buffer_.read_from(*client_it);},
         [&] {
-            return true; // how to check if the socket is readable?
+          std::cout << "http read " << std::endl;
+            return not read_buffer_.writable_region().empty(); 
         },
-        [&, client_it] { int bytes_sent = client_it->write( send_buffer_ ); },
+        [&, client_it] { std::cout << "http write " << std::endl;  send_buffer_.write_to(*client_it); },
         [&] {
-            return true; // how to check if the socket is writeable?
+          std::cout << "http write " << std::endl;
+            return not send_buffer_.readable_region().empty(); 
         },
         [&, client_it] {std::cout << "died" << std::endl;
           client_it->close();
           clients_.erase(client_it);
         });
+      
+      event_loop.add_rule(
+        "pop messages",
+        [&] {
+          std::string message;
+          int length = read_buffer_.readable_region()[0];
+          std::cout << length << std::endl;
+          message.append(read_buffer_.readable_region().substr(0,length));
+          read_buffer_.pop(length);
+          std::cout << message.length() << std::endl;
+          outbound_messages_.emplace_back(move(message));
+          
+        },
+        [&] {return read_buffer_.readable_region().length() > (int)read_buffer_.readable_region()[0] - 1;}
+      );
+
+      event_loop.add_rule(
+        "write responses",
+        [&]{
+          auto message = outbound_messages_.front();
+          int bytes_wrote = send_buffer_.write(message);
+          std::cout << bytes_wrote << std::endl;
+          if(bytes_wrote == message.length())
+          {
+            outbound_messages_.pop_front();
+          } else {
+            message = message.substr(bytes_wrote,message.length());
+          }
+          std::cout << outbound_messages_.size() << std::endl;
+        },
+        [&] {return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty();}
+      );
+
     },
     [&]{
       return true;
     }
   );
-
-  // auto & tcp_sock = http_.session().socket();
-  // event_loop.add_rule(
-  //   "http",
-  //   tcp_sock,
-  //   [&] { simple_string_span test; tcp_sock.read(test); read_buffer_.read_from(test);},
-  //   [&] {
-  //       return true; // how to check if the socket is readable?
-  //   },
-  //   [&] { write_buffer_.write_to(tcp_sock);},
-  //   [&] {
-  //       return true; // how to check if the socket is writeable?
-  //   }
-  // );
-
-  // rules_.push_back( event_loop.add_rule(
-  //       "HTTP write",
-  //       [&] { http_.write(write_buffer_); },
-  //       [&] {
-  //           return ( not http_.requests_empty()) and ( not write_buffer_.writable_region().empty() ); // how to check if the socket is writeable?
-  //       } ) );
-  // rules_.push_back( event_loop.add_rule(
-  //       "HTTP read",
-  //       [&] { http_.read(read_buffer_);},
-  //       [&] {
-  //           return ( not read_buffer_.readable_region().empty() ); // how to check if the socket is writeable?
-  //       } ) );
 }
 
 int main( int argc, char* argv[] )
@@ -153,5 +131,29 @@ int main( int argc, char* argv[] )
   loop.set_fd_failure_callback([]{});
    while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit );
   
+  RingBuffer test(4096);
+  std::cout << test.writable_region().length() << std::endl;
+  std::cout << test.readable_region().length() << std::endl;
+
+  std::string_view k = "1111111";
+  test.write(k);
+  std::cout << test.writable_region().length() << std::endl;
+  std::cout << test.readable_region().length() << std::endl;
+  std::cout << k << std::endl;
+  std::string_view q = "1234567";
+  test.read_from(q);
+  std::cout << test.writable_region().length() << std::endl;
+  std::cout << test.readable_region().length() << std::endl;
+  std::cout << q << std::endl;
+  std::cout << test.readable_region()[10] << std::endl;
+
+  std::string output;
+  output.append(test.readable_region().substr(0,10));
+  std::cout << output << std::endl;
+
+  test.pop(10);
+  output.append(test.readable_region().substr(0,4));
+  std::cout << output << std::endl;
+
   return EXIT_SUCCESS;
 }
