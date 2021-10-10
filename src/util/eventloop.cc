@@ -11,7 +11,7 @@ using namespace std;
 
 size_t EventLoop::add_category( const string& name )
 {
-  _rule_categories.push_back( { name, {} } );
+  _rule_categories.emplace_back( name );
   return _rule_categories.size() - 1;
 }
 
@@ -383,7 +383,7 @@ string EventLoop::summary() const
 
   for ( const auto& rule : _rule_categories ) {
     const auto& name = rule.name;
-    const auto& timer = rule.timer;
+    const auto& timer = *rule.timer;
 
     if ( timer.count == 0 )
       continue;

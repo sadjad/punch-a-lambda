@@ -2,19 +2,19 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <list>
+#include <map>
 #include <set>
 #include <string>
 #include <string_view>
 
+#include "net/http_client.hh"
+#include "net/session.hh"
 #include "net/socket.hh"
+#include "storage/LocalStorage.hpp"
 #include "util/eventloop.hh"
 #include "util/split.hh"
 #include "util/timerfd.hh"
-#include "storage/LocalStorage.hpp"
-#include "net/http_client.hh"
-#include "net/session.hh"
 
 using namespace std;
 using namespace std::chrono;
@@ -52,7 +52,7 @@ listener_socket_( [&]{
 }())
 {}
 
-void StorageServer::install_rules(EventLoop & event_loop)
+void StorageServer::install_rules( EventLoop& event_loop )
 {
 
   event_loop.add_rule(
@@ -94,8 +94,7 @@ void StorageServer::install_rules(EventLoop & event_loop)
           message.append(client_it->read_buffer_.readable_region().substr(0,length));
           client_it->read_buffer_.pop(length);
           std::cout << message.length() << std::endl;
-          outbound_messages_.emplace_back(move(message));
-          
+          outbound_messages_.emplace_back( move( message ) );
         },
         [&, client_it] {return client_it->read_buffer_.readable_region().length() > (int)client_it->read_buffer_.readable_region()[0] - 1;}
       );
@@ -106,11 +105,10 @@ void StorageServer::install_rules(EventLoop & event_loop)
           auto message = outbound_messages_.front();
           int bytes_wrote = client_it->send_buffer_.write(message);
           std::cout << bytes_wrote << std::endl;
-          if(bytes_wrote == message.length())
-          {
+          if ( bytes_wrote == message.length() ) {
             outbound_messages_.pop_front();
           } else {
-            message = message.substr(bytes_wrote,message.length());
+            message = message.substr( bytes_wrote, message.length() );
           }
           std::cout << outbound_messages_.size() << std::endl;
         },
@@ -118,43 +116,41 @@ void StorageServer::install_rules(EventLoop & event_loop)
       );
 
     },
-    [&]{
-      return true;
-    }
-  );
+    [&] { return true; } );
 }
 
 int main( int argc, char* argv[] )
 {
 
   EventLoop loop;
-  StorageServer echo(100);
-  echo.install_rules(loop);
-  loop.set_fd_failure_callback([]{});
-   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit );
-  
-  RingBuffer test(4096);
+  StorageServer echo( 100 );
+  echo.install_rules( loop );
+  loop.set_fd_failure_callback( [] {} );
+  while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
+    ;
+
+  RingBuffer test( 4096 );
   std::cout << test.writable_region().length() << std::endl;
   std::cout << test.readable_region().length() << std::endl;
 
   std::string_view k = "1111111";
-  test.write(k);
+  test.write( k );
   std::cout << test.writable_region().length() << std::endl;
   std::cout << test.readable_region().length() << std::endl;
   std::cout << k << std::endl;
   std::string_view q = "1234567";
-  test.read_from(q);
+  test.read_from( q );
   std::cout << test.writable_region().length() << std::endl;
   std::cout << test.readable_region().length() << std::endl;
   std::cout << q << std::endl;
   std::cout << test.readable_region()[10] << std::endl;
 
   std::string output;
-  output.append(test.readable_region().substr(0,10));
+  output.append( test.readable_region().substr( 0, 10 ) );
   std::cout << output << std::endl;
 
-  test.pop(10);
-  output.append(test.readable_region().substr(0,4));
+  test.pop( 10 );
+  output.append( test.readable_region().substr( 0, 4 ) );
   std::cout << output << std::endl;
 
   return EXIT_SUCCESS;
