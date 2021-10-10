@@ -19,16 +19,19 @@
 using namespace std;
 using namespace std::chrono;
 
+struct ClientHandler{
+  TCPSocket socket_;
+  RingBuffer send_buffer_;
+  RingBuffer read_buffer_;
+};
+
 class StorageServer
 {
   private:
     LocalStorage my_storage_;
     std::vector<EventLoop::RuleHandle> rules_ {};
     TCPSocket listener_socket_;
-    RingBuffer send_buffer_;
-    RingBuffer read_buffer_;
-    HTTPResponse response_;
-    std::list<TCPSocket> clients_;
+    std::list<ClientHandler> clients_;
     std::list<std::string> outbound_messages_;
   public:
     StorageServer(size_t size);
@@ -46,9 +49,7 @@ listener_socket_( [&]{
   listener_socket.bind( { "127.0.0.1",  8080} );
   listener_socket.listen();
   return listener_socket;
-}()),
-send_buffer_(4096),
-read_buffer_(4096)
+}())
 {}
 
 void StorageServer::install_rules(EventLoop & event_loop)
@@ -59,50 +60,51 @@ void StorageServer::install_rules(EventLoop & event_loop)
     Direction::In,
     listener_socket_,
     [&]{
-      clients_.emplace_back( move( listener_socket_.accept() ) );
+      ClientHandler a({std::move( listener_socket_.accept() ), RingBuffer(4096), RingBuffer(4096)} );
+      clients_.emplace_back( std::move(a) );
       auto client_it = prev( clients_.end() );
       
-      client_it->set_blocking( false );
+      client_it->socket_.set_blocking( false );
       std::cout << "accepted connection" << std::endl;
 
       event_loop.add_rule(
         "http",
-        *client_it,
-        [&, client_it] { std::cout << "http read " << std::endl; read_buffer_.read_from(*client_it);},
-        [&] {
+        client_it->socket_,
+        [&, client_it] { std::cout << "http read " << std::endl; client_it->read_buffer_.read_from(client_it->socket_);},
+        [&, client_it] {
           std::cout << "http read " << std::endl;
-            return not read_buffer_.writable_region().empty(); 
+            return not client_it->read_buffer_.writable_region().empty(); 
         },
-        [&, client_it] { std::cout << "http write " << std::endl;  send_buffer_.write_to(*client_it); },
-        [&] {
+        [&, client_it] { std::cout << "http write " << std::endl;  client_it->send_buffer_.write_to(client_it->socket_); },
+        [&, client_it] {
           std::cout << "http write " << std::endl;
-            return not send_buffer_.readable_region().empty(); 
+            return not client_it->send_buffer_.readable_region().empty(); 
         },
         [&, client_it] {std::cout << "died" << std::endl;
-          client_it->close();
+          client_it->socket_.close();
           clients_.erase(client_it);
         });
       
       event_loop.add_rule(
         "pop messages",
-        [&] {
+        [&, client_it] {
           std::string message;
-          int length = read_buffer_.readable_region()[0];
+          int length = client_it->read_buffer_.readable_region()[0];
           std::cout << length << std::endl;
-          message.append(read_buffer_.readable_region().substr(0,length));
-          read_buffer_.pop(length);
+          message.append(client_it->read_buffer_.readable_region().substr(0,length));
+          client_it->read_buffer_.pop(length);
           std::cout << message.length() << std::endl;
           outbound_messages_.emplace_back(move(message));
           
         },
-        [&] {return read_buffer_.readable_region().length() > (int)read_buffer_.readable_region()[0] - 1;}
+        [&, client_it] {return client_it->read_buffer_.readable_region().length() > (int)client_it->read_buffer_.readable_region()[0] - 1;}
       );
 
       event_loop.add_rule(
         "write responses",
-        [&]{
+        [&, client_it]{
           auto message = outbound_messages_.front();
-          int bytes_wrote = send_buffer_.write(message);
+          int bytes_wrote = client_it->send_buffer_.write(message);
           std::cout << bytes_wrote << std::endl;
           if(bytes_wrote == message.length())
           {
@@ -112,7 +114,7 @@ void StorageServer::install_rules(EventLoop & event_loop)
           }
           std::cout << outbound_messages_.size() << std::endl;
         },
-        [&] {return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty();}
+        [&, client_it] {return outbound_messages_.size() > 0 and not client_it->send_buffer_.writable_region().empty();}
       );
 
     },
