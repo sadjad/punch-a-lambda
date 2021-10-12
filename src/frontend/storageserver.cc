@@ -28,8 +28,8 @@ struct ClientHandler{
 
 enum MessageType {pointer, plaintext};
 
-union Message{
-  std::tuple<void *, size_t> outptr;
+struct Message{
+  std::pair<const void *, size_t> outptr;
   std::string plain;
 };
 
@@ -48,7 +48,9 @@ class StorageServer
 
     std::string temp_inbound_message_;
     int expected_length = 4;
+    int receive_state = 0;
     std::list<std::string> inbound_messages_;
+
     std::list<OutboundMessage> outbound_messages_;
   public:
     StorageServer(size_t size);
@@ -103,14 +105,10 @@ void StorageServer::install_rules( EventLoop& event_loop )
         });
       
 
-/*
-std::string temp_inbound_message_;
-    int expected_length;
-    std::list<std::string> inbounded_messages_;
-*/
       // fsm:
       // state 0: starting state, don't know expected length
       // state 1: in the middle of a message
+      // check test.py to see python reference FSM for receiving
 
       int receive_state = 0; //move to global
 
@@ -175,11 +173,11 @@ std::string temp_inbound_message_;
                 {
                    std::stringstream result;
                    result << a.value();
-                   OutboundMessage response {plaintext, .plain = move(result.str())};
-                   response.message_type_ = 
-                   outbound_messages_.emplace_back( move( result.str() ) );
+                   OutboundMessage response = {plaintext, {{},move(result.str())}};
+                   outbound_messages_.emplace_back( move( response ) );
                 } else {
-                   outbound_messages_.emplace_back( move( "new object creation failed" ) );
+                   OutboundMessage response = {plaintext, {{},move("new object creation failed")}};
+                   outbound_messages_.emplace_back( move( response ) );
                 }
                 break;
               }
@@ -189,17 +187,18 @@ std::string temp_inbound_message_;
                 auto a = my_storage_.locate(name);
                 if(a.has_value())
                 {
-                  std::stringstream result;
-                   result << a.value().ptr;
-                   outbound_messages_.emplace_back( move( result.str() ) );
+                   OutboundMessage response = {pointer, {{a.value().ptr, a.value().size},{}}};
+                   outbound_messages_.emplace_back( move( response ) );
                 } else {
-                  outbound_messages_.emplace_back( move( "can't find object" ) );
+                  OutboundMessage response = {plaintext, {{},move("can't find object")}};
+                  outbound_messages_.emplace_back( move(response) );
                 }
                 break;
               }
               default:
               {
-                outbound_messages_.emplace_back( move( "unidentified opcode" ) );
+                OutboundMessage response = {plaintext, {{},move("unidentified opcode")}};
+                outbound_messages_.emplace_back( response );
                 break;
               }
           }
@@ -211,12 +210,24 @@ std::string temp_inbound_message_;
         "write responses",
         [&, client_it]{
           auto message = outbound_messages_.front();
-          int bytes_wrote = client_it->send_buffer_.write(message);
-          if ( bytes_wrote == message.length() ) {
-            outbound_messages_.pop_front();
+          if(message.message_type_ == plaintext){
+            int bytes_wrote = client_it->send_buffer_.write(message.message.plain);
+            if ( bytes_wrote == message.message.plain.length() ) {
+              outbound_messages_.pop_front();
+            } else {
+              message.message.plain = message.message.plain.substr( bytes_wrote, message.message.plain.length() );
+            }
           } else {
-            message = message.substr( bytes_wrote, message.length() );
+            // write the memory location pointed to by this pointer to the send buffer. first create a stringview from this pointer
+            std::string_view a ((const char *) message.message.outptr.first, message.message.outptr.second);
+            int bytes_wrote = client_it->send_buffer_.write(a);
+            if ( bytes_wrote == a.length() ) {
+              outbound_messages_.pop_front();
+            } else {
+              message.message.outptr.second -= bytes_wrote;
+            }
           }
+          
         },
         [&, client_it] {return outbound_messages_.size() > 0 and not client_it->send_buffer_.writable_region().empty();}
       );
