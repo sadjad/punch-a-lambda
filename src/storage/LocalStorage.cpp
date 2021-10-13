@@ -57,6 +57,39 @@ std::optional <void *> LocalStorage::new_object(std::string key, size_t size)
     }
 }
 
+int LocalStorage::new_object_from_string(std::string key, std::string object)
+{
+    auto size = object.length();
+    if (total_size_ + size > max_size_)
+    {
+        std::cerr << "Allocation surpassing maximum size" << std::endl;
+        return 0;
+    } else
+    {
+        void * ptr = malloc(size);
+        std::memcpy(ptr, object.c_str(), size);
+        total_size_ += size;
+
+        if (alias_.find(key) != alias_.end())
+        {
+            std::cerr << "key is in aliases" << std::endl;
+            return 0;
+        }
+
+        bool ok = storage_.insert({key, {true, size, ptr}}).second;
+        if(ok)
+        {
+            key2alias_.insert({key,{}});
+            return 1;
+        } else
+        {
+            std::cerr << "key is in storage" << std::endl;
+            return 0;
+        }
+    }
+}
+
+
 int LocalStorage::commit(std::string key)
 {
     auto alias_lookup = alias_.find(key);

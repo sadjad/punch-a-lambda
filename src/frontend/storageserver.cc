@@ -123,8 +123,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 std::cout << expected_length << std::endl;
                 if(temp_inbound_message_.length() > expected_length - 1)
                 {
-                  inbound_messages_.emplace_back(move(temp_inbound_message_.substr(4, expected_length)));
-                  temp_inbound_message_ = temp_inbound_message_.substr(expected_length, temp_inbound_message_.length());
+                  inbound_messages_.emplace_back(move(temp_inbound_message_.substr(4, expected_length - 4)));
+                  temp_inbound_message_ = temp_inbound_message_.substr(expected_length);
                   expected_length = 4;
                   receive_state = 0;
                   return; 
@@ -139,8 +139,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
             } else {
               if(temp_inbound_message_.length() > expected_length - 1)
               {
-                inbound_messages_.emplace_back(move(temp_inbound_message_.substr(4, expected_length)));
-                temp_inbound_message_ = temp_inbound_message_.substr(expected_length, temp_inbound_message_.length());
+                inbound_messages_.emplace_back(move(temp_inbound_message_.substr(4, expected_length - 4)));
+                temp_inbound_message_ = temp_inbound_message_.substr(expected_length);
                 expected_length = 4;
                 receive_state = 0;
                 return;
@@ -167,7 +167,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               {
                 int size = * (int * )(message.c_str() + 1);
                 std::cout << "size " << size << ";" << std::endl;
-                std::string name = message.substr(5,length);
+                std::string name = message.substr(5);
                 std::cout << "storing:" << name << ";" << std::endl;
                 auto a = my_storage_.new_object(name,size);
                 if (a.has_value())
@@ -177,14 +177,14 @@ void StorageServer::install_rules( EventLoop& event_loop )
                    OutboundMessage response = {plaintext, {{},move(result.str())}};
                    outbound_messages_.emplace_back( move( response ) );
                 } else {
-                   OutboundMessage response = {plaintext, {{},move("new object creation failed")}};
+                   OutboundMessage response = {plaintext, {{},"new object creation failed"}};
                    outbound_messages_.emplace_back( move( response ) );
                 }
                 break;
               }
               case 1:
               {
-                std::string name = message.substr(1,length);
+                std::string name = message.substr(1);
                 std::cout << "looking up:" << name << ";" << std::endl;
                 auto a = my_storage_.locate(name);
                 if(a.has_value())
@@ -192,10 +192,26 @@ void StorageServer::install_rules( EventLoop& event_loop )
                    OutboundMessage response = {pointer, {{a.value().ptr, a.value().size},{}}};
                    outbound_messages_.emplace_back( move( response ) );
                 } else {
-                  OutboundMessage response = {plaintext, {{},move("can't find object")}};
+                  OutboundMessage response = {plaintext, {{},"can't find object"}};
                   outbound_messages_.emplace_back( move(response) );
                 }
                 break;
+              }
+              case 2:
+              {
+                int size = * (int * )(message.c_str() + 1);
+                std::cout << "size " << size << ";" << std::endl;
+                std::string name = message.substr(5,size); // name can only be 4 characters for now 
+                void * my_object = (void *)const_cast<char*>(message.c_str() + 5 + size);
+                auto success = my_storage_.new_object_from_string(name, move(message.substr(5+size)));
+                if(success == 0)
+                {
+                  OutboundMessage response = {plaintext, {{},move("made new object with pointer")}};
+                  outbound_messages_.emplace_back( move(response) );
+                } else {
+                  OutboundMessage response = {plaintext, {{},move("can't create new object with ptr")}};
+                  outbound_messages_.emplace_back( move(response) );
+                }
               }
               default:
               {
@@ -217,7 +233,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
             if ( bytes_wrote == message.message.plain.length() ) {
               outbound_messages_.pop_front();
             } else {
-              message.message.plain = message.message.plain.substr( bytes_wrote, message.message.plain.length() );
+              message.message.plain = message.message.plain.substr( bytes_wrote );
             }
           } else {
             // write the memory location pointed to by this pointer to the send buffer. first create a stringview from this pointer
@@ -242,7 +258,7 @@ int main( int argc, char* argv[] )
 {
 
   EventLoop loop;
-  StorageServer echo( 100 );
+  StorageServer echo( 200 );
   echo.install_rules( loop );
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
