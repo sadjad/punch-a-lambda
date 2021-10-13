@@ -110,8 +110,6 @@ void StorageServer::install_rules( EventLoop& event_loop )
       // state 1: in the middle of a message
       // check test.py to see python reference FSM for receiving
 
-      int receive_state = 0; //move to global
-
       event_loop.add_rule(
         "receive messages",
         [&, client_it] {
@@ -122,6 +120,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               if(temp_inbound_message_.length() > 4)
               {
                 expected_length =  * (int * )(temp_inbound_message_.c_str() );
+                std::cout << expected_length << std::endl;
                 if(temp_inbound_message_.length() > expected_length - 1)
                 {
                   inbound_messages_.emplace_back(move(temp_inbound_message_.substr(4, expected_length)));
@@ -131,9 +130,11 @@ void StorageServer::install_rules( EventLoop& event_loop )
                   return; 
                 } else{
                   receive_state = 1;
+                  return;
                 }
               } else {
                 receive_state = 0;
+                return;
               }
             } else {
               if(temp_inbound_message_.length() > expected_length - 1)
@@ -142,32 +143,32 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 temp_inbound_message_ = temp_inbound_message_.substr(expected_length, temp_inbound_message_.length());
                 expected_length = 4;
                 receive_state = 0;
+                return;
               } else {
                 receive_state = 1;
+                return;
               }
             }
         },
-        [&, client_it] {return temp_inbound_message_.length() > 0 or not client_it->read_buffer_.readable_region().empty();}
+        [&, client_it] {std::cout << "cond:" << temp_inbound_message_ << std::endl; return temp_inbound_message_.length() > 0 or not client_it->read_buffer_.readable_region().empty();}
       );
 
       event_loop.add_rule(
         "pop messages",
         [&, client_it] {
-          std::string message;
-          int length = client_it->read_buffer_.readable_region()[0];
-          std::cout << length << std::endl;
-          message.append(client_it->read_buffer_.readable_region().substr(0,length ));
-          client_it->read_buffer_.pop(length );
+          std::string message = inbound_messages_.front();
+          inbound_messages_.pop_front();
+          int length = message.length();
           std::cout << "message recevid " << message << std::endl;
 
-          int opcode = stoi(message.substr(1,2));
+          int opcode = stoi(message.substr(0,1));
           switch(opcode){
               case 0:
               {
-                int size = * (int * )(message.c_str() + 2);
+                int size = * (int * )(message.c_str() + 1);
                 std::cout << "size " << size << ";" << std::endl;
-                std::string name = message.substr(6,length);
-                std::cout << "name " << name << ";" << std::endl;
+                std::string name = message.substr(5,length);
+                std::cout << "storing:" << name << ";" << std::endl;
                 auto a = my_storage_.new_object(name,size);
                 if (a.has_value())
                 {
@@ -183,7 +184,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
               }
               case 1:
               {
-                std::string name = message.substr(2,length);
+                std::string name = message.substr(1,length);
+                std::cout << "looking up:" << name << ";" << std::endl;
                 auto a = my_storage_.locate(name);
                 if(a.has_value())
                 {
@@ -203,7 +205,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               }
           }
         },
-        [&, client_it] {return not client_it->read_buffer_.readable_region().empty() and client_it->read_buffer_.readable_region().length() > (int)client_it->read_buffer_.readable_region()[0] - 1;}
+        [&, client_it] {return inbound_messages_.size() > 0;}
       );
 
       event_loop.add_rule(
