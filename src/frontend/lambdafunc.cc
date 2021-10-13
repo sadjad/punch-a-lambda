@@ -8,10 +8,10 @@
 #include <string_view>
 
 #include "net/socket.hh"
+#include "storage/LocalStorage.hpp"
 #include "util/eventloop.hh"
 #include "util/split.hh"
 #include "util/timerfd.hh"
-#include "storage/LocalStorage.hpp"
 
 using namespace std;
 using namespace std::chrono;
@@ -119,8 +119,8 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
 int main( int argc, char* argv[] )
 {
 
-  auto a = new LocalStorage(4096);
-  
+  auto a = new LocalStorage( 4096 );
+
   if ( argc < 5 ) {
     cerr
       << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim> "

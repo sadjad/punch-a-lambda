@@ -66,8 +66,7 @@ int main( int argc, char* argv[] )
         [&] { return peer.id == 0; },
         [&] { // out callback
           peer.write_index += peer.socket.write(
-            string_view { *message }.substr(
-              peer.write_index ) );
+            string_view { *message }.substr( peer.write_index ) );
         },
         [&] {
           return message.has_value() && peer.write_index < message->length();
