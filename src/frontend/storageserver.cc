@@ -202,7 +202,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 int size = * (int * )(message.c_str() + 1);
                 std::cout << "size " << size << ";" << std::endl;
                 std::string name = message.substr(5,size); // name can only be 4 characters for now 
-                void * my_object = (void *)const_cast<char*>(message.c_str() + 5 + size);
+
                 auto success = my_storage_.new_object_from_string(name, move(message.substr(5+size)));
                 if(success == 0)
                 {
@@ -212,6 +212,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                   OutboundMessage response = {plaintext, {{},move("can't create new object with ptr")}};
                   outbound_messages_.emplace_back( move(response) );
                 }
+                break;
               }
               default:
               {
