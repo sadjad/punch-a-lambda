@@ -178,6 +178,7 @@ void StorageServer::connect(std::vector<std::string> ips, EventLoop & event_loop
                     OutboundMessage response = {plaintext, {{},move(message)}};
                     requesting_client->second->buffered_remote_responses_[tag] = response;
                 }
+                break;
               }
               default:
               {
