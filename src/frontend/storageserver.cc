@@ -147,6 +147,7 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
                 }
                 break;
               }
+              // remote store request from this connection, must have been initiated by a remote lookup request sent from here
               case 2:
               {
                 auto result = message_handler_.parse_remote_store(message);
@@ -181,9 +182,36 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
                     requesting_client->second->buffered_remote_responses_[tag] = response;
                   }
                 }
+                // reallow this tag.
+                tag_generator_.allow(tag);
                 break;
               }
+              // delete
+              case 3:
+              {
+                // parse remote delete and parse remote lookup should be the same.
+                auto result = message_handler_.parse_remote_lookup(message);
+                std::string name = std::get<0>(result);
+                int tag = std::get<1>(result);
+                std::cout << "looking up:" << name << ";" << std::endl;
+                int a = my_storage_.delete_object(name);
+                if(a == 0)
+                {
+                  OutboundMessage response = {plaintext, {{},message_handler_.generate_remote_success(tag, "deleted " + name)}};
+                  conn_it->second.outbound_messages_.emplace_back( move(response) );
+                } else
+                {
+                  OutboundMessage response = {plaintext, {{},message_handler_.generate_remote_error(tag, "failed to delete " + name)}};
+                  conn_it->second.outbound_messages_.emplace_back( move(response) );
+                }
+                tag_generator_.allow(tag);
+                break;
+              }
+
               // got an opcode with an error code related to a remote request likely 
+              
+              // currently remote success and remote failure get handled the same way
+              case 0:
               case 5:
               {
                 auto error = message_handler_.parse_remote_error(message);
@@ -192,7 +220,7 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
                 auto requesting_client = outstanding_remote_requests_.find(tag);
                 if(requesting_client == outstanding_remote_requests_.end())
                 {
-                  std::cout << "received an error with a wierd tag, something's wrong" << std::endl;
+                  std::cout << "received a remote message with a wierd tag, something's wrong" << std::endl;
                 }
                 else
                 {
@@ -330,7 +358,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                   OutboundMessage response = {plaintext, {{},move("made new object with pointer")}};
                   client_it->outbound_messages_.emplace_back( move(response) );
                 } else {
-                  OutboundMessage response = {plaintext, {{},move("can't create new object with ptr")}};
+                  OutboundMessage response = {plaintext, {{},message_handler_.generate_local_error("can't create new object with ptr")}};
                   client_it->outbound_messages_.emplace_back( move(response) );
                 }
                 break;
@@ -339,11 +367,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
               // tells the storage server to send a get request to a remote server
               case 3:
               {
-                int size = * (int * )(message.c_str() + 1);
-                std::cout << "size " << size << ";" << std::endl;
-                std::string name = message.substr(5,size); 
-                int id = *(int *)(message.c_str() + 5 + size);
-                // (len(i) + 5).to_bytes(4,'little') + bytes("1","utf-8") + bytes(i,"utf-8")
+                auto result = message_handler_.parse_local_remote_lookup(message);
+                std::string name = std::get<0>(result);
+                int id = std::get<1>(result);
 
                 // generate a unique tag for this local request which will be used to identify it
                 int tag = tag_generator_.emit();
@@ -353,8 +379,39 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push(tag);
                 
-                std::cout << id << std::endl;
                 std::cout << remote_request << std::endl;
+                OutboundMessage response = {plaintext, {{}, remote_request}};
+                std::cout << id << std::endl;
+                connections_.at(id).outbound_messages_.emplace_back(move(response));
+                break;
+              }
+
+              case 6:
+              {
+                std::string name = message_handler_.parse_local_lookup(message);
+                int result = my_storage_.delete_object(name);
+                if (result == 0)
+                {
+                  OutboundMessage response = {plaintext, {{},message_handler_.generate_local_success("deleted " + name)}};
+                  client_it->outbound_messages_.emplace_back( move(response) );
+                } else
+                {
+                  OutboundMessage response = {plaintext, {{},message_handler_.generate_local_error("failed to delete " + name)}};
+                  client_it->outbound_messages_.emplace_back( move(response) );
+                }
+                break;
+              }
+
+              case 7:
+              {
+                auto result = message_handler_.parse_local_remote_lookup(message);
+                std::string name = std::get<0>(result);
+                int id = std::get<1>(result);
+                int tag = tag_generator_.emit();
+                std::string remote_request = message_handler_.generate_remote_delete(tag, name);
+                outstanding_remote_requests_.insert({tag, & *client_it});
+                client_it->ordered_tags.push(tag);
+
                 OutboundMessage response = {plaintext, {{}, remote_request}};
                 std::cout << id << std::endl;
                 connections_.at(id).outbound_messages_.emplace_back(move(response));

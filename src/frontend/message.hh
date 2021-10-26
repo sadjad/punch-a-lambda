@@ -50,6 +50,15 @@ class MessageHandler
             p[0] = tag;
             return remote_request; 
         };
+        std::string generate_remote_delete(int tag, std::string name)
+        {
+            std::string remote_request {"000030000" + name};
+            int * p = (int*) const_cast <char *>(remote_request.c_str());
+            p[0] = name.length() + 9;
+            p = (int*) const_cast <char *>(remote_request.c_str() + 5);
+            p[0] = tag;
+            return remote_request; 
+        };
         // note that we send remote store as two messages, the first is a plaintext header and the second is a ptr payload
         std::string generate_remote_store_header(int tag, std::string name, int payload_size)
         {
@@ -65,6 +74,15 @@ class MessageHandler
         std::string generate_remote_error(int tag, std::string error)
         {
             std::string message {"000050000" + error};
+            int * p = (int*) const_cast <char *>(message.c_str());
+            p[0] = message.length();
+            p = (int*) const_cast <char *>(message.c_str() + 5);
+            p[0] = tag;
+            return message;
+        };
+        std::string generate_remote_success(int tag, std::string error)
+        {
+            std::string message {"000000000" + error};
             int * p = (int*) const_cast <char *>(message.c_str());
             p[0] = message.length();
             p = (int*) const_cast <char *>(message.c_str() + 5);
@@ -102,5 +120,20 @@ class MessageHandler
             p[0] = message.length();
             return message;
         };
+        std::string generate_local_success(std::string error)
+        {
+            std::string message {"00000" + error};
+            int * p = (int*) const_cast <char *>(message.c_str());
+            p[0] = message.length();
+            return message;
+        };
+        std::tuple<std::string, int> parse_local_remote_lookup(std::string message)
+        {
+            int size = * (int * )(message.c_str() + 1);
+            std::cout << "size " << size << ";" << std::endl;
+            std::string name = message.substr(5,size); 
+            int id = *(int *)(message.c_str() + 5 + size);
+            return {name, id};
+        }
 
 };
