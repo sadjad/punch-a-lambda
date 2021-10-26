@@ -71,9 +71,9 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
       std::string ip = it.second;
       Address address { ip, static_cast<uint16_t>( 8000 )};
       TCPSocket socket;
+      socket.set_reuseaddr();
       socket.bind({ "0",static_cast<uint16_t>(8000) } );
       //socket.set_blocking( false );
-      socket.set_reuseaddr();
       socket.connect( address );
       auto result = connections_.emplace(id, ClientHandler {std::move(socket), RingBuffer(4096), RingBuffer(4096), {}, 4, 0, {}, {}});
       if(!result.second )
@@ -166,8 +166,9 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
                   else
                   {
                     auto a = my_storage_.locate(name).value();
+                    OutboundMessage response_header = {plaintext, {{}, message_handler_.generate_local_object_header(name,a.size)}};
                     OutboundMessage response = {pointer, {{a.ptr, a.size},{}}};
-                    requesting_client->second->buffered_remote_responses_[tag] = response;
+                    requesting_client->second->buffered_remote_responses_[tag] = {response_header, response};
                   }
 
                 } else {
@@ -178,8 +179,18 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
                   }
                   else
                   {
-                    OutboundMessage response = {plaintext, {{},message_handler_.generate_local_error("can't create new object with ptr")}};
-                    requesting_client->second->buffered_remote_responses_[tag] = response;
+                    auto a = my_storage_.locate(name);
+                    if(a.has_value())
+                    {
+                      auto b = a.value();
+                      OutboundMessage response_header = {plaintext, {{}, message_handler_.generate_local_object_header(name,b.size)}};
+                      OutboundMessage response = {pointer, {{b.ptr, b.size},{}}};
+                      requesting_client->second->buffered_remote_responses_[tag] = {response_header, response};
+                    } else{
+                      OutboundMessage response = {plaintext, {{},message_handler_.generate_local_error("can't create new local object with ptr, object also not in storage (could it be too big?)")}};
+                      requesting_client->second->buffered_remote_responses_[tag] = {response};
+                    }
+                    
                   }
                 }
                 // reallow this tag.
@@ -225,7 +236,7 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
                 else
                 {
                     OutboundMessage response = {plaintext, {{},move(message)}};
-                    requesting_client->second->buffered_remote_responses_[tag] = response;
+                    requesting_client->second->buffered_remote_responses_[tag] = {response};
                 }
                 break;
               }
@@ -336,7 +347,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 auto a = my_storage_.locate(name);
                 if(a.has_value())
                 {
+                   OutboundMessage response_header = {plaintext, {{}, message_handler_.generate_local_object_header(name, a.value().size)}};
                    OutboundMessage response = {pointer, {{a.value().ptr, a.value().size},{}}};
+                   client_it->outbound_messages_.emplace_back( move(response_header));
                    client_it->outbound_messages_.emplace_back( move( response ) );
                 } else {
                   OutboundMessage response = {plaintext, {{},message_handler_.generate_local_error("can't find object")}};
@@ -433,7 +446,10 @@ void StorageServer::install_rules( EventLoop& event_loop )
       event_loop.add_rule(
         "buffer to responses",
         [&, client_it]{
-            client_it->outbound_messages_.emplace_back(client_it->buffered_remote_responses_.find(client_it->ordered_tags.front())->second);
+            for(auto it : client_it->buffered_remote_responses_.find(client_it->ordered_tags.front())->second)
+            {
+                client_it->outbound_messages_.emplace_back(it); // better call the copy constructor here, we will remove the thing later.
+            }
             client_it->buffered_remote_responses_.erase(client_it->ordered_tags.front());
             client_it->ordered_tags.pop();
         },

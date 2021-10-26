@@ -71,6 +71,17 @@ class MessageHandler
             p[0] = name.length();
             return remote_request;
         };
+
+        std::string generate_local_object_header(std::string name, int payload_size)
+        {
+            std::string remote_request {"000020000" + name};
+            int * p = (int*) const_cast <char *>(remote_request.c_str());
+            p[0] = name.length() + 9 + payload_size;
+            p = (int*) const_cast <char *>(remote_request.c_str() + 5);
+            p[0] = name.length();
+            return remote_request;
+        };
+
         std::string generate_remote_error(int tag, std::string error)
         {
             std::string message {"000050000" + error};

@@ -30,7 +30,7 @@ struct ClientHandler{
   std::list<std::string> inbound_messages_;
   std::list<OutboundMessage> outbound_messages_;
 
-  std::unordered_map<int, OutboundMessage> buffered_remote_responses_;
+  std::unordered_map<int, std::vector<OutboundMessage>> buffered_remote_responses_;
   std::queue<int> ordered_tags;
 
 
