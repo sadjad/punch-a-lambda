@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 #include <sstream>
-
+#include "lambdafunc.hh"
 #include "clienthandler.hh"
 #include "message.hh"
 
@@ -22,14 +22,16 @@ class StorageServer
     std::vector<EventLoop::RuleHandle> rules_ {};
     TCPSocket listener_socket_;
     std::list<ClientHandler> clients_;
-    std::vector<ClientHandler> connections_;
+    // must not use unordered_map because we are going to need the iterator to persist in our event loop lambda declarations!
+    std::map<int, ClientHandler> connections_;
     MessageHandler message_handler_;
     UniqueTagGenerator tag_generator_;
     std::unordered_map<int, ClientHandler *> outstanding_remote_requests_ {}; 
     
   public:
     StorageServer(size_t size);
-    void connect(std::vector<std::string> ips, EventLoop & event_loop);
+    void connect_lambda(std::string coordinator_ip, uint16_t coordinator_port, uint32_t thread_id, uint32_t block_dim, EventLoop & event_loop);
+    void connect(std::map<size_t, std::string> & ips, EventLoop & event_loop);
     void install_rules(EventLoop & event_loop);
 
 };
@@ -48,52 +50,71 @@ listener_socket_( [&]{
 tag_generator_(1000) // supports 1000 concurrent tags, should be more than enough 
 {}
 
-void StorageServer::connect(std::vector<std::string> ips, EventLoop & event_loop)
+void StorageServer::connect_lambda(std::string coordinator_ip, uint16_t coordinator_port, uint32_t thread_id, uint32_t block_dim, EventLoop & event_loop)
+{
+  std::ofstream fout {"/tmp/out"};
+  std::map<size_t, std::string> peer_addresses = get_peer_addresses( thread_id ,
+                                        coordinator_ip,
+                                        coordinator_port,
+                                        block_dim, 
+                                        fout);
+  this->connect(peer_addresses, event_loop);
+  
+}
+
+void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & event_loop)
 {
   int count = 0;
-  for(auto &ip : ips)
+  for(auto &it : ips)
   {
+      int id = it.first;
+      std::string ip = it.second;
       Address address { ip, static_cast<uint16_t>( 8000 )};
       TCPSocket socket;
       socket.bind({ "0",static_cast<uint16_t>(8000) } );
       //socket.set_blocking( false );
+      socket.set_reuseaddr();
       socket.connect( address );
-      ClientHandler conn({std::move(socket), RingBuffer(4096), RingBuffer(4096), {}, 4, 0, {}, {}});
-      connections_.emplace_back(std::move(conn));
-      auto conn_it = prev( connections_.end() );
+      auto result = connections_.emplace(id, ClientHandler {std::move(socket), RingBuffer(4096), RingBuffer(4096), {}, 4, 0, {}, {}});
+      if(!result.second )
+      {
+        assert(false);
+      }
+      auto conn_it = result.first;
+
       std::cout << "opening up connection to remote socket at " << ip << std::endl;
       
       event_loop.add_rule(
         "http-peer",
-        conn_it->socket_,
-        [&, conn_it] { std::cout << "http read " << std::endl; conn_it->read_buffer_.read_from(conn_it->socket_); std::cout <<  conn_it->read_buffer_.readable_region().length() << std::endl;},
+        conn_it->second.socket_,
+        [&, conn_it] { std::cout << "http read " << std::endl; conn_it->second.read_buffer_.read_from(conn_it->second.socket_); std::cout <<  conn_it->second.read_buffer_.readable_region().length() << std::endl;},
         [&, conn_it] {
           std::cout << "http read " << std::endl;
-            return not conn_it->read_buffer_.writable_region().empty(); 
+            return not conn_it->second.read_buffer_.writable_region().empty(); 
         },
-        [&, conn_it] { std::cout << "http write " << std::endl;  conn_it->send_buffer_.write_to(conn_it->socket_); },
+        [&, conn_it] { std::cout << "http write " << std::endl;  conn_it->second.send_buffer_.write_to(conn_it->second.socket_); },
         [&, conn_it] {
           std::cout << "http write " << std::endl;
-            return not conn_it->send_buffer_.readable_region().empty(); 
+            return not conn_it->second.send_buffer_.readable_region().empty(); 
         },
         [&, conn_it] {std::cout << "died" << std::endl;
-          conn_it->socket_.close();
+          conn_it->second.socket_.close();
           connections_.erase(conn_it);
         });
       
       event_loop.add_rule(
         "receive messages-peer",
         [&, conn_it] {
-            conn_it->parse(event_loop);
+            conn_it->second.parse(event_loop);
         },
-        [&, conn_it] {std::cout << "cond:" << conn_it->temp_inbound_message_ << std::endl; return conn_it->temp_inbound_message_.length() > 0 or not conn_it->read_buffer_.readable_region().empty();}
+        [&, conn_it] {std::cout << "cond:" << conn_it->second.temp_inbound_message_ << std::endl; return conn_it->second.temp_inbound_message_.length() > 0 or not conn_it->second.read_buffer_.readable_region().empty();}
       );
 
       event_loop.add_rule(
         "pop messages",
         [&, conn_it] {
-          std::string message = conn_it->inbound_messages_.front();
-          conn_it->inbound_messages_.pop_front();
+          std::string message = conn_it->second.inbound_messages_.front();
+          conn_it->second.inbound_messages_.pop_front();
           int length = message.length();
           std::cout << "message recevid " << message << std::endl;
 
@@ -116,13 +137,13 @@ void StorageServer::connect(std::vector<std::string> ips, EventLoop & event_loop
                   // we are actually going to just send a opcode 2 response right back to the one who sent the request. 
                    std::string remote_request = message_handler_.generate_remote_store_header(tag, name, a.value().size);
                    OutboundMessage response_header = {plaintext, {{}, move(remote_request)}};
-                    conn_it->outbound_messages_.emplace_back( move( response_header ) );
+                    conn_it->second.outbound_messages_.emplace_back( move( response_header ) );
                    OutboundMessage response = {pointer, {{a.value().ptr, a.value().size},{}}};
-                   conn_it->outbound_messages_.emplace_back( move( response ) );
+                   conn_it->second.outbound_messages_.emplace_back( move( response ) );
                 } else {
                   std::string message = message_handler_.generate_remote_error(tag, "can't find object");
                   OutboundMessage response = {plaintext, {{},std::move(message)}};
-                  conn_it->outbound_messages_.emplace_back( move(response) );
+                  conn_it->second.outbound_messages_.emplace_back( move(response) );
                 }
                 break;
               }
@@ -183,24 +204,22 @@ void StorageServer::connect(std::vector<std::string> ips, EventLoop & event_loop
               default:
               {
                 OutboundMessage response = {plaintext, {{},message_handler_.generate_local_error("unidentified opcode")}};
-                conn_it->outbound_messages_.emplace_back( response );
+                conn_it->second.outbound_messages_.emplace_back( response );
                 break;
               }
           }
         },
-        [&, conn_it] {return conn_it->inbound_messages_.size() > 0;}
+        [&, conn_it] {return conn_it->second.inbound_messages_.size() > 0;}
       );
 
       event_loop.add_rule(
         "write responses",
         [&, conn_it]{
-          conn_it->produce(event_loop);
+          conn_it->second.produce(event_loop);
         },
-        [&, conn_it] {return conn_it->outbound_messages_.size() > 0 and not conn_it->send_buffer_.writable_region().empty();}
+        [&, conn_it] {return conn_it->second.outbound_messages_.size() > 0 and not conn_it->second.send_buffer_.writable_region().empty();}
       );
-
   }
-  
 }
 
 void StorageServer::install_rules( EventLoop& event_loop )
@@ -337,8 +356,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 std::cout << id << std::endl;
                 std::cout << remote_request << std::endl;
                 OutboundMessage response = {plaintext, {{}, remote_request}};
-                connections_[id].outbound_messages_.emplace_back(move(response));
-
+                std::cout << id << std::endl;
+                connections_.at(id).outbound_messages_.emplace_back(move(response));
+                break;
               }
 
               default:
@@ -381,7 +401,10 @@ int main( int argc, char* argv[] )
   EventLoop loop;
   StorageServer echo( 200 );
   echo.install_rules( loop );
-  echo.connect({argv[1]}, loop);
+  //std::map<size_t, std::string> input {{0,argv[1]}};
+  //echo.connect(input, loop);
+  echo.connect_lambda(argv[1], atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), loop);
+
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit );
 
