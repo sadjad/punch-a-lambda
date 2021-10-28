@@ -1,5 +1,9 @@
 #include "assert.h"
+
 #include <unordered_set>
+#include <string>
+
+#include "util/util.hh"
 
 class UniqueTagGenerator
 {
@@ -38,11 +42,16 @@ void UniqueTagGenerator::allow( int key )
 class MessageHandler
 {
 public:
+  enum RemoteOpCode : int {
+    LOOKUP = 1,
+    STORE = 2,
+    DELETE = 3
+  };
   // rely on RVO for the return value
 
   std::string generate_remote_lookup( int tag, std::string name )
   {
-    std::string remote_request { "000010000" + name };
+    std::string remote_request { "0000" + std::to_string(LOOKUP) + "0000" + name };
     int* p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() ) );
     p[0] = name.length() + 9;
     p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );

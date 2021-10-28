@@ -462,7 +462,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
 int main( int argc, char* argv[] )
 {
   if ( argc != 5 ) {
-    std::cerr << "Usage: " << std::endl;
+    std::cerr << "Usage: MASTER_IP MASTER_PORT THREADID BLOCKDIM " << std::endl;
     return EXIT_FAILURE;
   }
 
