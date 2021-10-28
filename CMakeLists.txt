@@ -16,6 +16,7 @@ file ( GLOB SOURCE
   src/remote/*
   src/schedulers/*
   src/simulator/*
+  src/nat/*
   src/storage/*
 )
 
