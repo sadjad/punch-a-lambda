@@ -20,6 +20,7 @@ class StorageServer
   private:
     LocalStorage my_storage_;
     std::vector<EventLoop::RuleHandle> rules_ {};
+    TCPSocket ready_socket_;
     TCPSocket listener_socket_;
     std::list<ClientHandler> clients_;
     // must not use unordered_map because we are going to need the iterator to persist in our event loop lambda declarations!
@@ -59,6 +60,10 @@ void StorageServer::connect_lambda(std::string coordinator_ip, uint16_t coordina
                                         block_dim, 
                                         fout);
   this->connect(peer_addresses, event_loop);
+  ready_socket_.set_blocking( false );
+  ready_socket_.set_reuseaddr();
+  ready_socket_.bind( { "127.0.0.1",  8079} );
+  ready_socket_.listen();
   
 }
 
@@ -87,14 +92,12 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
       event_loop.add_rule(
         "http-peer",
         conn_it->second.socket_,
-        [&, conn_it] { std::cout << "http read " << std::endl; conn_it->second.read_buffer_.read_from(conn_it->second.socket_); std::cout <<  conn_it->second.read_buffer_.readable_region().length() << std::endl;},
+        [&, conn_it] { conn_it->second.read_buffer_.read_from(conn_it->second.socket_); std::cout <<  conn_it->second.read_buffer_.readable_region().length() << std::endl;},
         [&, conn_it] {
-          std::cout << "http read " << std::endl;
             return not conn_it->second.read_buffer_.writable_region().empty(); 
         },
-        [&, conn_it] { std::cout << "http write " << std::endl;  conn_it->second.send_buffer_.write_to(conn_it->second.socket_); },
+        [&, conn_it] { conn_it->second.send_buffer_.write_to(conn_it->second.socket_); },
         [&, conn_it] {
-          std::cout << "http write " << std::endl;
             return not conn_it->second.send_buffer_.readable_region().empty(); 
         },
         [&, conn_it] {std::cout << "died" << std::endl;
@@ -107,7 +110,7 @@ void StorageServer::connect(std::map<size_t, std::string> & ips, EventLoop & eve
         [&, conn_it] {
             conn_it->second.parse(event_loop);
         },
-        [&, conn_it] {std::cout << "cond:" << conn_it->second.temp_inbound_message_ << std::endl; return conn_it->second.temp_inbound_message_.length() > 0 or not conn_it->second.read_buffer_.readable_region().empty();}
+        [&, conn_it] {return conn_it->second.temp_inbound_message_.length() > 0 or not conn_it->second.read_buffer_.readable_region().empty();}
       );
 
       event_loop.add_rule(
@@ -301,7 +304,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
         [&, client_it] {
             client_it->parse(event_loop);
         },
-        [&, client_it] {std::cout << "cond:" << client_it->temp_inbound_message_ << std::endl; return client_it->temp_inbound_message_.length() > 0 or not client_it->read_buffer_.readable_region().empty();}
+        [&, client_it] {return client_it->temp_inbound_message_.length() > 0 or not client_it->read_buffer_.readable_region().empty();}
       );
 
       event_loop.add_rule(
