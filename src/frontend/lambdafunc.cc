@@ -19,9 +19,7 @@ struct Worker
 
   size_t bytes_transferred { 0 };
 
-  Worker( const size_t thread_id_,
-          const Address& addr_,
-          const WorkerType type_ )
+  Worker( const size_t thread_id_, const Address& addr_, const WorkerType type_ )
     : thread_id( thread_id_ )
     , addr( addr_ )
     , type( type_ )
@@ -47,9 +45,8 @@ int main( int argc, char* argv[] )
   auto a = new LocalStorage( 4096 );
 
   if ( argc < 5 ) {
-    cerr
-      << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim> "
-      << "<active-worker>..." << endl;
+    cerr << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim> "
+         << "<active-worker>..." << endl;
     return EXIT_FAILURE;
   }
 
@@ -72,19 +69,12 @@ int main( int argc, char* argv[] )
 
   list<Worker> peers;
 
-  for ( auto& [peer_id, peer_ip] :
-        get_peer_addresses( thread_id, master_ip, master_port, block_dim, fout ) ) {
+  for ( auto& [peer_id, peer_ip] : get_peer_addresses( thread_id, master_ip, master_port, block_dim, fout ) ) {
     peers.emplace(
-      peers.end(),
-      peer_id,
-      Address { peer_ip, static_cast<uint16_t>( 14000 + peer_id ) },
-      WorkerType::Send );
+      peers.end(), peer_id, Address { peer_ip, static_cast<uint16_t>( 14000 + peer_id ) }, WorkerType::Send );
 
     peers.emplace(
-      peers.end(),
-      peer_id,
-      Address { peer_ip, static_cast<uint16_t>( 18000 + peer_id ) },
-      WorkerType::Recv );
+      peers.end(), peer_id, Address { peer_ip, static_cast<uint16_t>( 18000 + peer_id ) }, WorkerType::Recv );
   }
 
   string send_buffer = generate_random_buffer( 1 * 1024 * 1024 );
@@ -94,10 +84,7 @@ int main( int argc, char* argv[] )
   size_t bytes_recv = 0;
 
   for ( auto& peer : peers ) {
-    peer.socket.bind(
-      { "0",
-        static_cast<uint16_t>( ( peer.type == WorkerType::Send ? 18000 : 14000 )
-                               + thread_id ) } );
+    peer.socket.bind( { "0", static_cast<uint16_t>( ( peer.type == WorkerType::Send ? 18000 : 14000 ) + thread_id ) } );
 
     peer.socket.set_blocking( false );
     peer.socket.connect( peer.addr );
@@ -131,19 +118,14 @@ int main( int argc, char* argv[] )
     logging_timer,
     [&] {
       logging_timer.read_event();
-      fout << "bytes_sent=" << bytes_sent << ",bytes_recv=" << bytes_recv
-           << endl;
+      fout << "bytes_sent=" << bytes_sent << ",bytes_recv=" << bytes_recv << endl;
     },
     [] { return true; } );
 
   TimerFD termination_timer { seconds { 30 } };
 
   loop.add_rule(
-    "termination",
-    Direction::In,
-    termination_timer,
-    [&] { terminated = true; },
-    [&] { return not terminated; } );
+    "termination", Direction::In, termination_timer, [&] { terminated = true; }, [&] { return not terminated; } );
 
   loop.set_fd_failure_callback( [&] {
     fout << "socket error occurred" << endl;
@@ -152,8 +134,7 @@ int main( int argc, char* argv[] )
 
   const auto start = steady_clock::now();
 
-  while ( not terminated
-          and loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
+  while ( not terminated and loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
     ;
 
   const auto end = steady_clock::now();

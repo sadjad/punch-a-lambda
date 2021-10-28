@@ -16,9 +16,8 @@ class Socket : public FileDescriptor
 {
 private:
   //! Get the local or peer address the socket is connected to
-  Address get_address(
-    const std::string& name_of_function,
-    const std::function<int( int, sockaddr*, socklen_t* )>& function ) const;
+  Address get_address( const std::string& name_of_function,
+                       const std::function<int( int, sockaddr*, socklen_t* )>& function ) const;
 
 protected:
   //! Construct via [socket(2)](\ref man2::socket)
@@ -29,15 +28,11 @@ protected:
 
   //! Wrapper around [getsockopt(2)](\ref man2::getsockopt)
   template<typename option_type>
-  socklen_t getsockopt( const int level,
-                        const int option,
-                        option_type& option_value ) const;
+  socklen_t getsockopt( const int level, const int option, option_type& option_value ) const;
 
   //! Wrapper around [setsockopt(2)](\ref man2::setsockopt)
   template<typename option_type>
-  void setsockopt( const int level,
-                   const int option,
-                   const option_type& option_value );
+  void setsockopt( const int level, const int option, const option_type& option_value );
 
 public:
   //! Bind a socket to a specified address with [bind(2)](\ref man2::bind),

@@ -44,9 +44,8 @@ Socket::Socket( FileDescriptor&& fd, const int domain, const int type )
 //! \param[in] name_of_function is the function to call (string passed to
 //! CheckSystemCall()) \param[in] function is a pointer to the function \returns
 //! the requested Address
-Address Socket::get_address(
-  const string& name_of_function,
-  const function<int( int, sockaddr*, socklen_t* )>& function ) const
+Address Socket::get_address( const string& name_of_function,
+                             const function<int( int, sockaddr*, socklen_t* )>& function ) const
 {
   Address::Raw address;
   socklen_t size = sizeof( address );
@@ -114,13 +113,10 @@ void UDPSocket::recv( received_datagram& datagram, const size_t mtu )
 
   socklen_t fromlen = sizeof( datagram_source_address );
 
-  const ssize_t recv_len = CheckSystemCall( "recvfrom",
-                                            ::recvfrom( fd_num(),
-                                                        datagram.payload.data(),
-                                                        datagram.payload.size(),
-                                                        MSG_TRUNC,
-                                                        datagram_source_address,
-                                                        &fromlen ) );
+  const ssize_t recv_len = CheckSystemCall(
+    "recvfrom",
+    ::recvfrom(
+      fd_num(), datagram.payload.data(), datagram.payload.size(), MSG_TRUNC, datagram_source_address, &fromlen ) );
 
   if ( recv_len > ssize_t( mtu ) ) {
     throw runtime_error( "recvfrom (oversized datagram)" );
@@ -141,19 +137,13 @@ UDPSocket::received_datagram UDPSocket::recv( const size_t mtu )
 void UDPSocket::sendto( const Address& destination, const string_view payload )
 {
   CheckSystemCall( "sendto",
-                   ::sendto( fd_num(),
-                             payload.data(),
-                             payload.length(),
-                             0,
-                             destination,
-                             destination.size() ) );
+                   ::sendto( fd_num(), payload.data(), payload.length(), 0, destination, destination.size() ) );
   register_write();
 }
 
 void UDPSocket::send( const string_view payload )
 {
-  CheckSystemCall( "send",
-                   ::send( fd_num(), payload.data(), payload.length(), 0 ) );
+  CheckSystemCall( "send", ::send( fd_num(), payload.data(), payload.length(), 0 ) );
   register_write();
 }
 
@@ -171,20 +161,15 @@ void TCPSocket::listen( const int backlog )
 TCPSocket TCPSocket::accept()
 {
   register_read();
-  return TCPSocket( FileDescriptor(
-    CheckSystemCall( "accept", ::accept( fd_num(), nullptr, nullptr ) ) ) );
+  return TCPSocket( FileDescriptor( CheckSystemCall( "accept", ::accept( fd_num(), nullptr, nullptr ) ) ) );
 }
 
 // get socket option
 template<typename option_type>
-socklen_t Socket::getsockopt( const int level,
-                              const int option,
-                              option_type& option_value ) const
+socklen_t Socket::getsockopt( const int level, const int option, option_type& option_value ) const
 {
   socklen_t optlen = sizeof( option_value );
-  CheckSystemCall(
-    "getsockopt",
-    ::getsockopt( fd_num(), level, option, &option_value, &optlen ) );
+  CheckSystemCall( "getsockopt", ::getsockopt( fd_num(), level, option, &option_value, &optlen ) );
   return optlen;
 }
 
@@ -194,14 +179,9 @@ socklen_t Socket::getsockopt( const int level,
 //! \param[in] option_value The value to set
 //! \details See [setsockopt(2)](\ref man2::setsockopt) for details.
 template<typename option_type>
-void Socket::setsockopt( const int level,
-                         const int option,
-                         const option_type& option_value )
+void Socket::setsockopt( const int level, const int option, const option_type& option_value )
 {
-  CheckSystemCall(
-    "setsockopt",
-    ::setsockopt(
-      fd_num(), level, option, &option_value, sizeof( option_value ) ) );
+  CheckSystemCall( "setsockopt", ::setsockopt( fd_num(), level, option, &option_value, sizeof( option_value ) ) );
 }
 
 // allow local address to be reused sooner, at the cost of some robustness
@@ -216,8 +196,7 @@ void Socket::throw_if_error() const
   int socket_error = 0;
   const socklen_t len = getsockopt( SOL_SOCKET, SO_ERROR, socket_error );
   if ( len != sizeof( socket_error ) ) {
-    throw runtime_error( "unexpected length from getsockopt: "
-                         + to_string( len ) );
+    throw runtime_error( "unexpected length from getsockopt: " + to_string( len ) );
   }
 
   if ( socket_error ) {
@@ -225,6 +204,4 @@ void Socket::throw_if_error() const
   }
 }
 
-template void Socket::setsockopt( const int level,
-                                  const int option,
-                                  const timeval& option_value );
+template void Socket::setsockopt( const int level, const int option, const timeval& option_value );

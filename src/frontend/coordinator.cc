@@ -48,8 +48,7 @@ int main( int argc, char* argv[] )
       connected_clients.emplace_back( move( listen_socket.accept() ) );
       auto& peer = connected_clients.back();
 
-      cerr << "connection[" << connected_clients.size()
-           << "]: " << peer.socket.peer_address().to_string() << endl;
+      cerr << "connection[" << connected_clients.size() << "]: " << peer.socket.peer_address().to_string() << endl;
 
       loop.add_rule(
         "peer read/write",
@@ -60,17 +59,13 @@ int main( int argc, char* argv[] )
           peer.id = *reinterpret_cast<uint32_t*>( buffer.data() );
           initialized_clients++;
 
-          cerr << "peer id for " << peer.socket.peer_address().to_string()
-               << " is " << peer.id << endl;
+          cerr << "peer id for " << peer.socket.peer_address().to_string() << " is " << peer.id << endl;
         },
         [&] { return peer.id == 0; },
         [&] { // out callback
-          peer.write_index += peer.socket.write(
-            string_view { *message }.substr( peer.write_index ) );
+          peer.write_index += peer.socket.write( string_view { *message }.substr( peer.write_index ) );
         },
-        [&] {
-          return message.has_value() && peer.write_index < message->length();
-        } );
+        [&] { return message.has_value() && peer.write_index < message->length(); } );
     },
     [&] { return connected_clients.size() < client_count; } );
 
@@ -87,9 +82,7 @@ int main( int argc, char* argv[] )
       cerr << oss.str();
       message.emplace( oss.str() );
     },
-    [&] {
-      return !message.has_value() and initialized_clients == client_count;
-    } );
+    [&] { return !message.has_value() and initialized_clients == client_count; } );
 
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
     ;

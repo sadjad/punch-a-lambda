@@ -13,10 +13,7 @@ class ssl_error_category : public std::error_category
 {
 public:
   const char* name() const noexcept override { return "SSL"; }
-  std::string message( const int ssl_error ) const noexcept override
-  {
-    return ERR_error_string( ssl_error, nullptr );
-  }
+  std::string message( const int ssl_error ) const noexcept override { return ERR_error_string( ssl_error, nullptr ); }
 };
 
 class ssl_error : public tagged_error
@@ -29,18 +26,11 @@ public:
 
 class OpenSSL
 {
-  static void check_errors( const std::string_view context,
-                            const bool must_have_error );
+  static void check_errors( const std::string_view context, const bool must_have_error );
 
 public:
-  static void check( const std::string_view context )
-  {
-    return check_errors( context, false );
-  }
-  static void throw_error( const std::string_view context )
-  {
-    return check_errors( context, true );
-  }
+  static void check( const std::string_view context ) { return check_errors( context, false ); }
+  static void throw_error( const std::string_view context ) { return check_errors( context, true ); }
 };
 
 class Certificate

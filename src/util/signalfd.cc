@@ -33,8 +33,7 @@ SignalMask SignalMask::current_mask( void )
 bool SignalMask::operator==( const SignalMask& other ) const
 {
   for ( int signum = 0; signum < SIGRTMAX; signum++ ) {
-    if ( sigismember( &mask_, signum )
-         != sigismember( &other.mask_, signum ) ) {
+    if ( sigismember( &mask_, signum ) != sigismember( &other.mask_, signum ) ) {
       return false;
     }
   }
@@ -50,8 +49,7 @@ void SignalMask::set_as_mask( void ) const
 }
 
 SignalFD::SignalFD( const SignalMask& signals )
-  : FileDescriptor(
-    SystemCall( "signalfd", signalfd( -1, &signals.mask(), 0 ) ) )
+  : FileDescriptor( SystemCall( "signalfd", signalfd( -1, &signals.mask(), 0 ) ) )
 {}
 
 /* read one signal */
@@ -59,8 +57,7 @@ signalfd_siginfo SignalFD::read_signal( void )
 {
   signalfd_siginfo delivered_signal;
 
-  const size_t length = read( { reinterpret_cast<char*>( &delivered_signal ),
-                                sizeof( signalfd_siginfo ) } );
+  const size_t length = read( { reinterpret_cast<char*>( &delivered_signal ), sizeof( signalfd_siginfo ) } );
 
   if ( length != sizeof( signalfd_siginfo ) ) {
     throw runtime_error( "signalfd read size mismatch" );

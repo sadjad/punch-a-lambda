@@ -67,11 +67,9 @@ size_t FileDescriptor::read( simple_string_span buffer )
     throw runtime_error( "FileDescriptor::read: no space to read" );
   }
 
-  const ssize_t bytes_read
-    = ::read( fd_num(), buffer.mutable_data(), buffer.size() );
+  const ssize_t bytes_read = ::read( fd_num(), buffer.mutable_data(), buffer.size() );
   if ( bytes_read < 0 ) {
-    if ( _internal_fd->_non_blocking
-         and ( errno == EAGAIN or errno == EINPROGRESS ) ) {
+    if ( _internal_fd->_non_blocking and ( errno == EAGAIN or errno == EINPROGRESS ) ) {
       return 0;
     } else {
       throw unix_error( "read" );
@@ -93,8 +91,7 @@ size_t FileDescriptor::read( simple_string_span buffer )
 
 size_t FileDescriptor::write( const string_view buffer )
 {
-  const ssize_t bytes_written = CheckSystemCall(
-    "write", ::write( fd_num(), buffer.data(), buffer.size() ) );
+  const ssize_t bytes_written = CheckSystemCall( "write", ::write( fd_num(), buffer.data(), buffer.size() ) );
   register_write();
 
   if ( bytes_written == 0 and buffer.size() != 0 ) {
@@ -116,8 +113,7 @@ size_t FileDescriptor::write( const vector<string_view>& buffers )
     iovecs.push_back( { const_cast<char*>( x.data() ), x.size() } );
   }
 
-  const ssize_t bytes_written = CheckSystemCall(
-    "writev", ::writev( fd_num(), iovecs.data(), iovecs.size() ) );
+  const ssize_t bytes_written = CheckSystemCall( "writev", ::writev( fd_num(), iovecs.data(), iovecs.size() ) );
   register_write();
 
   return bytes_written;
@@ -144,8 +140,7 @@ void FileDescriptor::set_blocking( const bool blocking )
   _internal_fd->_non_blocking = not blocking;
 }
 
-int FileDescriptor::FDWrapper::CheckSystemCall( const string_view s_attempt,
-                                                const int return_value ) const
+int FileDescriptor::FDWrapper::CheckSystemCall( const string_view s_attempt, const int return_value ) const
 {
   if ( return_value >= 0 ) {
     return return_value;
