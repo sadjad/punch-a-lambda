@@ -18,13 +18,13 @@ class StorageServer
 private:
   LocalStorage my_storage_;
   std::vector<EventLoop::RuleHandle> rules_ {};
-  TCPSocket ready_socket_;
-  TCPSocket listener_socket_;
-  std::list<ClientHandler> clients_;
+  TCPSocket ready_socket_ {};
+  TCPSocket listener_socket_ {};
+  std::list<ClientHandler> clients_ {};
   // must not use unordered_map because we are going to need the iterator to persist in our event loop lambda
   // declarations!
-  std::map<int, ClientHandler> connections_;
-  MessageHandler message_handler_;
+  std::map<int, ClientHandler> connections_ {};
+  MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
   std::unordered_map<int, ClientHandler*> outstanding_remote_requests_ {};
 
@@ -71,7 +71,6 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
 
 void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& event_loop )
 {
-  int count = 0;
   for ( auto& it : ips ) {
     int id = it.first;
     std::string ip = it.second;
@@ -81,12 +80,12 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     socket.bind( { "0", static_cast<uint16_t>( 8000 ) } );
     // socket.set_blocking( false );
     socket.connect( address );
-    auto result = connections_.emplace(
+    auto r = connections_.emplace(
       id, ClientHandler { std::move( socket ), RingBuffer( 4096 ), RingBuffer( 4096 ), {}, 4, 0, {}, {} } );
-    if ( !result.second ) {
+    if ( !r.second ) {
       assert( false );
     }
-    auto conn_it = result.first;
+    auto conn_it = r.first;
 
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
@@ -108,7 +107,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
 
     event_loop.add_rule(
       "receive messages-peer",
-      [&, conn_it] { conn_it->second.parse( event_loop ); },
+      [&, conn_it] { conn_it->second.parse(); },
       [&, conn_it] {
         return conn_it->second.temp_inbound_message_.length() > 0
                or not conn_it->second.read_buffer_.readable_region().empty();
@@ -117,12 +116,11 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     event_loop.add_rule(
       "pop messages",
       [&, conn_it] {
-        std::string message = conn_it->second.inbound_messages_.front();
+        std::string msg = conn_it->second.inbound_messages_.front();
         conn_it->second.inbound_messages_.pop_front();
-        int length = message.length();
-        std::cout << "message recevid " << message << std::endl;
+        std::cout << "message recevid " << msg << std::endl;
 
-        int opcode = stoi( message.substr( 0, 1 ) );
+        int opcode = stoi( msg.substr( 0, 1 ) );
         switch ( opcode ) {
 
             // new object creation in localstorage, returns the pointer value as a string
@@ -130,7 +128,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
             // look up an object in localstorage and stream out its contents to the output socket
 
           case 1: {
-            auto result = message_handler_.parse_remote_lookup( message );
+            auto result = message_handler_.parse_remote_lookup( msg );
             std::string name = std::get<0>( result );
             int tag = std::get<1>( result );
             std::cout << "looking up:" << name << ";" << std::endl;
@@ -152,12 +150,12 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
           // remote store request from this connection, must have been initiated by a remote lookup request sent from
           // here
           case 2: {
-            auto result = message_handler_.parse_remote_store( message );
+            auto result = message_handler_.parse_remote_store( msg );
             std::string name = std::get<0>( result );
             int size = std::get<1>( result );
             int tag = std::get<2>( result );
 
-            auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 9 + size ) ) );
+            auto success = my_storage_.new_object_from_string( name, std::move( msg.substr( 9 + size ) ) );
             if ( success == 0 ) {
               auto requesting_client = outstanding_remote_requests_.find( tag );
               if ( requesting_client == outstanding_remote_requests_.end() ) {
@@ -199,7 +197,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
           // delete
           case 3: {
             // parse remote delete and parse remote lookup should be the same.
-            auto result = message_handler_.parse_remote_lookup( message );
+            auto result = message_handler_.parse_remote_lookup( msg );
             std::string name = std::get<0>( result );
             int tag = std::get<1>( result );
             std::cout << "looking up:" << name << ";" << std::endl;
@@ -222,7 +220,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
           // currently remote success and remote failure get handled the same way
           case 0:
           case 5: {
-            auto error = message_handler_.parse_remote_error( message );
+            auto error = message_handler_.parse_remote_error( msg );
             int tag = std::get<1>( error );
             std::string message = std::get<0>( error );
             auto requesting_client = outstanding_remote_requests_.find( tag );
@@ -246,7 +244,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
 
     event_loop.add_rule(
       "write responses",
-      [&, conn_it] { conn_it->second.produce( event_loop ); },
+      [&, conn_it] { conn_it->second.produce(); },
       [&, conn_it] {
         return conn_it->second.outbound_messages_.size() > 0
                and not conn_it->second.send_buffer_.writable_region().empty();
@@ -262,9 +260,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
     Direction::In,
     listener_socket_,
     [&] {
-      ClientHandler a(
+      ClientHandler new_client(
         { std::move( listener_socket_.accept() ), RingBuffer( 4096 ), RingBuffer( 4096 ), {}, 4, 0, {}, {} } );
-      clients_.emplace_back( std::move( a ) );
+      clients_.emplace_back( std::move( new_client ) );
       auto client_it = prev( clients_.end() );
 
       client_it->socket_.set_blocking( false );
@@ -300,7 +298,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
       event_loop.add_rule(
         "receive messages",
-        [&, client_it] { client_it->parse( event_loop ); },
+        [&, client_it] { client_it->parse(); },
         [&, client_it] {
           return client_it->temp_inbound_message_.length() > 0 or not client_it->read_buffer_.readable_region().empty();
         } );
@@ -310,7 +308,6 @@ void StorageServer::install_rules( EventLoop& event_loop )
         [&, client_it] {
           std::string message = client_it->inbound_messages_.front();
           client_it->inbound_messages_.pop_front();
-          int length = message.length();
           std::cout << "message recevid " << message << std::endl;
 
           int opcode = stoi( message.substr( 0, 1 ) );
@@ -320,7 +317,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               // currently useless without shared memory, but will be useful when shared memory is implemented.
 
             case 0: {
-              int size = *(int*)( message.c_str() + 1 );
+              int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
               std::cout << "size " << size << ";" << std::endl;
               std::string name = message.substr( 5 );
               std::cout << "storing:" << name << ";" << std::endl;
@@ -361,7 +358,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               // stores a new object by string into the localstorage
 
             case 2: {
-              int size = *(int*)( message.c_str() + 1 );
+              int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
               std::cout << "size " << size << ";" << std::endl;
               std::string name = message.substr( 5, size );
               auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
@@ -454,7 +451,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
       event_loop.add_rule(
         "write responses",
-        [&, client_it] { client_it->produce( event_loop ); },
+        [&, client_it] { client_it->produce(); },
         [&, client_it] {
           return client_it->outbound_messages_.size() > 0 and not client_it->send_buffer_.writable_region().empty();
         } );
@@ -464,6 +461,10 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
 int main( int argc, char* argv[] )
 {
+  if ( argc != 5 ) {
+    std::cerr << "Usage: " << std::endl;
+    return EXIT_FAILURE;
+  }
 
   EventLoop loop;
   StorageServer echo( 200 );

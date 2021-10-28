@@ -3,7 +3,7 @@
 #include <set>
 
 #include "net/socket.hh"
-#include "storage/LocalStorage.hpp"
+#include "storage/local_storage.hh"
 #include "util/eventloop.hh"
 #include "util/split.hh"
 #include "util/timerfd.hh"
@@ -50,9 +50,6 @@ string generate_random_buffer( const size_t len )
 
 int main( int argc, char* argv[] )
 {
-
-  auto a = new LocalStorage( 4096 );
-
   if ( argc < 5 ) {
     cerr << "Usage: lambdafunc <master_ip> <master_port> <thread_id> <block_dim> "
          << "<active-worker>..." << endl;
