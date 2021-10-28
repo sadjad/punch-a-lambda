@@ -1,6 +1,3 @@
-#include "clienthandler.hh"
-#include "message.hh"
-#include "nat/peer.hh"
 #include <chrono>
 #include <fcntl.h>
 #include <fstream>
@@ -11,6 +8,10 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+
+#include "nat/peer.hh"
+#include "storage/clienthandler.hh"
+#include "storage/message.hh"
 
 class StorageServer
 {
