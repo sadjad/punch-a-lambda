@@ -105,4 +105,44 @@ struct ClientHandler
       }
     }
   }
+
+  void install_rules(EventLoop & loop, const std::function<void( void )>& close_callback)
+  {
+    loop.add_rule(
+        "http",
+        socket_,
+        [&] {
+            read_buffer_.read_from( socket_ );
+            std::cout << read_buffer_.readable_region().length() << std::endl;
+        },
+        [&] {
+            return not read_buffer_.writable_region().empty();
+        },
+        [&] {
+            send_buffer_.write_to( socket_ );
+        },
+        [&] {
+            return not send_buffer_.readable_region().empty();
+        },
+        [&] {
+            std::cout << "client died" << std::endl;
+            close_callback();
+            socket_.close();
+        } );
+
+    loop.add_rule(
+        "receive messages",
+        [&] { parse(); },
+        [&] {
+          return temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty();
+        } );
+
+    loop.add_rule(
+        "write responses",
+        [&] {produce(); },
+        [&] {
+          return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty();
+        } );
+  }
+
 };

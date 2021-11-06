@@ -50,7 +50,7 @@ std::optional<void*> LocalStorage::new_object( std::string key, size_t size )
   }
 }
 
-int LocalStorage::new_object_from_string( std::string key, std::string&& object )
+int LocalStorage::new_object_from_string( std::string key, std::string && object )
 {
   auto size = object.length();
   if ( total_size_ + size > max_size_ ) {

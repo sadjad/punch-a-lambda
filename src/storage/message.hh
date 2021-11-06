@@ -31,6 +31,7 @@ int UniqueTagGenerator::emit()
     return key;
   } else {
     assert( false );
+    return 1;
   }
 }
 
@@ -48,6 +49,8 @@ public:
     DELETE = 3
   };
   // rely on RVO for the return value
+
+  // generate REMOTE REQUEST
 
   std::string generate_remote_lookup( int tag, std::string name )
   {
@@ -80,16 +83,6 @@ public:
     return remote_request;
   };
 
-  std::string generate_local_object_header( std::string name, int payload_size )
-  {
-    std::string remote_request { "000020000" + name };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() ) );
-    p[0] = name.length() + 9 + payload_size;
-    p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );
-    p[0] = name.length();
-    return remote_request;
-  };
-
   std::string generate_remote_error( int tag, std::string error )
   {
     std::string message { "000050000" + error };
@@ -108,6 +101,9 @@ public:
     p[0] = tag;
     return message;
   };
+
+  // parse REMOTE REQUEST
+
   std::tuple<std::string, int> parse_remote_lookup( std::string request )
   {
     int tag = *reinterpret_cast<const int*>( ( request.c_str() + 1 ) );
@@ -128,7 +124,19 @@ public:
     return { name, tag };
   };
 
-  std::string parse_local_lookup( std::string request ) { return request.substr( 1 ); };
+
+  // generate LOCAL RESPONSE
+
+  std::string generate_local_object_header( std::string name, int payload_size )
+  {
+    std::string remote_request { "000020000" + name };
+    int* p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() ) );
+    p[0] = name.length() + 9 + payload_size;
+    p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );
+    p[0] = name.length();
+    return remote_request;
+  };
+
   std::string generate_local_error( std::string error )
   {
     std::string message { "00005" + error };
@@ -143,6 +151,9 @@ public:
     p[0] = message.length();
     return message;
   };
+
+  // parse LOCAL REQUEST
+
   std::tuple<std::string, int> parse_local_remote_lookup( std::string message )
   {
     int size = *reinterpret_cast<const int*>( ( message.c_str() + 1 ) );
@@ -151,4 +162,17 @@ public:
     int id = *reinterpret_cast<const int*>( ( message.c_str() + 5 + size ) );
     return { name, id };
   }
+  std::string parse_local_lookup( std::string request ) { return request.substr( 1 ); };
+
+  // generate LOCAL REQUEST
+
+  std::string generate_local_lookup(std::string name )
+  {
+    std::string message { "00001" + name };
+    int* p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() ) );
+    p[0] = message.length();
+    return message;
+  };
+
+
 };

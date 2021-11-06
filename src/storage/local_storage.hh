@@ -29,7 +29,7 @@ public:
   int get_total_size();
   std::optional<Blob> locate( std::string );
   std::optional<void*> new_object( std::string key, size_t size );
-  int new_object_from_string( std::string key, std::string&& object );
+  int new_object_from_string( std::string key, std::string && object );
   int commit( std::string key );
   int grow( std::string key, size_t size );
   int delete_object( std::string key );

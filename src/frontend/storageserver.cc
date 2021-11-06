@@ -89,36 +89,21 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
 
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
-    event_loop.add_rule(
-      "http-peer",
-      conn_it->second.socket_,
-      [&, conn_it] {
-        conn_it->second.read_buffer_.read_from( conn_it->second.socket_ );
-        std::cout << conn_it->second.read_buffer_.readable_region().length() << std::endl;
-      },
-      [&, conn_it] { return not conn_it->second.read_buffer_.writable_region().empty(); },
-      [&, conn_it] { conn_it->second.send_buffer_.write_to( conn_it->second.socket_ ); },
-      [&, conn_it] { return not conn_it->second.send_buffer_.readable_region().empty(); },
-      [&, conn_it] {
+
+    conn_it->second.install_rules(event_loop, 
+     [&, conn_it] {
         std::cout << "died" << std::endl;
         conn_it->second.socket_.close();
         connections_.erase( conn_it );
-      } );
-
-    event_loop.add_rule(
-      "receive messages-peer",
-      [&, conn_it] { conn_it->second.parse(); },
-      [&, conn_it] {
-        return conn_it->second.temp_inbound_message_.length() > 0
-               or not conn_it->second.read_buffer_.readable_region().empty();
-      } );
+      } 
+      );
 
     event_loop.add_rule(
       "pop messages",
       [&, conn_it] {
         std::string msg = conn_it->second.inbound_messages_.front();
         conn_it->second.inbound_messages_.pop_front();
-        std::cout << "message recevid " << msg << std::endl;
+        std::cout << "message received " << msg << std::endl;
 
         int opcode = stoi( msg.substr( 0, 1 ) );
         switch ( opcode ) {
@@ -133,7 +118,11 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
             int tag = std::get<1>( result );
             std::cout << "looking up:" << name << ";" << std::endl;
             auto a = my_storage_.locate( name );
+
             if ( a.has_value() ) {
+
+              std::cout << "found object" << std::endl;
+
               // we are actually going to just send a opcode 2 response right back to the one who sent the request.
               std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
               OutboundMessage response_header = { plaintext, { {}, std::move( remote_request ) } };
@@ -141,6 +130,10 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
               OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
               conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
             } else {
+
+              std::cout << "did not find object" << std::endl;
+
+
               std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
               OutboundMessage response = { plaintext, { {}, std::move( message ) } };
               conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
@@ -242,13 +235,6 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
       },
       [&, conn_it] { return conn_it->second.inbound_messages_.size() > 0; } );
 
-    event_loop.add_rule(
-      "write responses",
-      [&, conn_it] { conn_it->second.produce(); },
-      [&, conn_it] {
-        return conn_it->second.outbound_messages_.size() > 0
-               and not conn_it->second.send_buffer_.writable_region().empty();
-      } );
   }
 }
 
@@ -268,40 +254,16 @@ void StorageServer::install_rules( EventLoop& event_loop )
       client_it->socket_.set_blocking( false );
       std::cout << "accepted connection" << std::endl;
 
-      event_loop.add_rule(
-        "http",
-        client_it->socket_,
-        [&, client_it] {
-          std::cout << "http read " << std::endl;
-          client_it->read_buffer_.read_from( client_it->socket_ );
-          std::cout << client_it->read_buffer_.readable_region().length() << std::endl;
-        },
-        [&, client_it] {
-          std::cout << "http read " << std::endl;
-          return not client_it->read_buffer_.writable_region().empty();
-        },
-        [&, client_it] {
-          std::cout << "http write " << std::endl;
-          client_it->send_buffer_.write_to( client_it->socket_ );
-        },
-        [&, client_it] {
-          std::cout << "http write " << std::endl;
-          return not client_it->send_buffer_.readable_region().empty();
-        },
-        [&, client_it] {
+      
+      client_it->install_rules(event_loop, 
+      [&, client_it] {
           std::cout << "died" << std::endl;
           std::cout << "remove all references of this client in outstanding_remote_request not implemented yet"
                     << std::endl;
           client_it->socket_.close();
           clients_.erase( client_it );
-        } );
-
-      event_loop.add_rule(
-        "receive messages",
-        [&, client_it] { client_it->parse(); },
-        [&, client_it] {
-          return client_it->temp_inbound_message_.length() > 0 or not client_it->read_buffer_.readable_region().empty();
-        } );
+        } 
+      );
 
       event_loop.add_rule(
         "pop messages",
@@ -447,13 +409,6 @@ void StorageServer::install_rules( EventLoop& event_loop )
         [&, client_it] {
           return client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
                  != client_it->buffered_remote_responses_.end();
-        } );
-
-      event_loop.add_rule(
-        "write responses",
-        [&, client_it] { client_it->produce(); },
-        [&, client_it] {
-          return client_it->outbound_messages_.size() > 0 and not client_it->send_buffer_.writable_region().empty();
         } );
     },
     [&] { return true; } );
