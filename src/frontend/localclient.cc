@@ -34,7 +34,7 @@ int main( int argc, char* argv[] )
   client_socket.connect({"127.0.0.1",8080});
 
   ClientHandler new_client(
-        { std::move( client_socket ), RingBuffer( 4096 ), RingBuffer( 4096 ), {}, 4, 0, {}, {} } );
+        std::move(client_socket) );
 
     new_client.install_rules(loop, 
     [&] {

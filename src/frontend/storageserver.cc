@@ -36,6 +36,7 @@ public:
                        uint32_t block_dim,
                        EventLoop& event_loop );
   void connect( std::map<size_t, std::string>& ips, EventLoop& event_loop );
+  void set_up_local();
   void install_rules( EventLoop& event_loop );
 };
 
@@ -69,6 +70,14 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   ready_socket_.listen();
 }
 
+void StorageServer::set_up_local()
+{
+  ready_socket_.set_blocking( false );
+  ready_socket_.set_reuseaddr();
+  ready_socket_.bind( { "127.0.0.1", 8079 } );
+  ready_socket_.listen();
+}
+
 void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& event_loop )
 {
   for ( auto& it : ips ) {
@@ -81,7 +90,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     // socket.set_blocking( false );
     socket.connect( address );
     auto r = connections_.emplace(
-      id, ClientHandler { std::move( socket ), RingBuffer( 4096 ), RingBuffer( 4096 ), {}, 4, 0, {}, {} } );
+      id, std::move(socket) );
     if ( !r.second ) {
       assert( false );
     }
@@ -246,9 +255,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
     Direction::In,
     listener_socket_,
     [&] {
-      ClientHandler new_client(
-        { std::move( listener_socket_.accept() ), RingBuffer( 4096 ), RingBuffer( 4096 ), {}, 4, 0, {}, {} } );
-      clients_.emplace_back( std::move( new_client ) );
+     
+      clients_.emplace_back( listener_socket_.accept()  );
       auto client_it = prev( clients_.end() );
 
       client_it->socket_.set_blocking( false );
@@ -304,12 +312,14 @@ void StorageServer::install_rules( EventLoop& event_loop )
               std::cout << "looking up:" << name << ";" << std::endl;
               auto a = my_storage_.locate( name );
               if ( a.has_value() ) {
+                std::cout << "a has value" << std::endl;
                 OutboundMessage response_header
                   = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.value().size ) } };
                 OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
                 client_it->outbound_messages_.emplace_back( std::move( response_header ) );
                 client_it->outbound_messages_.emplace_back( std::move( response ) );
               } else {
+                std::cout << "a missing" << std::endl;
                 OutboundMessage response
                   = { plaintext, { {}, message_handler_.generate_local_error( "can't find object" ) } };
                 client_it->outbound_messages_.emplace_back( std::move( response ) );
@@ -421,12 +431,16 @@ int main( int argc, char* argv[] )
     return EXIT_FAILURE;
   }
 
+  std::cout << argc << argv[0] << std::endl;
+
   EventLoop loop;
   StorageServer echo( 200 );
   echo.install_rules( loop );
   // std::map<size_t, std::string> input {{0,argv[1]}};
   // echo.connect(input, loop);
-  echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
+  //echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
+  echo.set_up_local();
+  
 
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )

@@ -40,10 +40,17 @@ struct ClientHandler
   std::unordered_map<int, std::vector<OutboundMessage>> buffered_remote_responses_ {};
   std::queue<int> ordered_tags {};
 
+  std::vector<EventLoop::RuleHandle> things_to_kill {}; 
+
   // fsm:
   // state 0: starting state, don't know expected length
   // state 1: in the middle of a message
   // check test.py to see python reference FSM for receiving
+
+  ClientHandler(TCPSocket && socket):
+  socket_(std::move(socket))
+  {
+  }
 
   void parse()
   {
@@ -84,6 +91,7 @@ struct ClientHandler
   void produce()
   {
     auto message = outbound_messages_.front();
+    std::cout << message.message.plain << std::endl;
     if ( message.message_type_ == plaintext ) {
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );
       if ( bytes_wrote == message.message.plain.length() ) {
@@ -97,18 +105,20 @@ struct ClientHandler
 
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
+      std::cout << "producing ptr " << a << std::endl;
       const size_t bytes_wrote = send_buffer_.write( a );
       if ( bytes_wrote == a.length() ) {
         outbound_messages_.pop_front();
       } else {
         message.message.outptr.second -= bytes_wrote;
+        message.message.outptr.first = reinterpret_cast<const void * > (reinterpret_cast<const char*>( message.message.outptr.first ) + bytes_wrote); 
       }
     }
   }
 
   void install_rules(EventLoop & loop, const std::function<void( void )>& close_callback)
   {
-    loop.add_rule(
+    things_to_kill.push_back(loop.add_rule(
         "http",
         socket_,
         [&] {
@@ -124,25 +134,33 @@ struct ClientHandler
         [&] {
             return not send_buffer_.readable_region().empty();
         },
-        [&] {
+        [&, f= close_callback] {
             std::cout << "client died" << std::endl;
-            close_callback();
+            f();
             socket_.close();
-        } );
+        } ));
 
-    loop.add_rule(
+    things_to_kill.push_back(loop.add_rule(
         "receive messages",
         [&] { parse(); },
         [&] {
           return temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty();
-        } );
+        } ));
 
-    loop.add_rule(
+    things_to_kill.push_back(loop.add_rule(
         "write responses",
         [&] {produce(); },
         [&] {
           return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty();
-        } );
+        } ));
+  }
+
+  ~ClientHandler()
+  {
+    for(auto & it : things_to_kill)
+    {
+        it.cancel();
+    }
   }
 
 };
