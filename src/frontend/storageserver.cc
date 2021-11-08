@@ -89,8 +89,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     socket.bind( { "0", static_cast<uint16_t>( 8000 ) } );
     // socket.set_blocking( false );
     socket.connect( address );
-    auto r = connections_.emplace(
-      id, std::move(socket) );
+    auto r = connections_.emplace( id, std::move( socket ) );
     if ( !r.second ) {
       assert( false );
     }
@@ -98,14 +97,11 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
 
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
-
-    conn_it->second.install_rules(event_loop, 
-     [&, conn_it] {
-        std::cout << "died" << std::endl;
-        conn_it->second.socket_.close();
-        connections_.erase( conn_it );
-      } 
-      );
+    conn_it->second.install_rules( event_loop, [&, conn_it] {
+      std::cout << "died" << std::endl;
+      conn_it->second.socket_.close();
+      connections_.erase( conn_it );
+    } );
 
     event_loop.add_rule(
       "pop messages",
@@ -141,7 +137,6 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
             } else {
 
               std::cout << "did not find object" << std::endl;
-
 
               std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
               OutboundMessage response = { plaintext, { {}, std::move( message ) } };
@@ -243,7 +238,6 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
         }
       },
       [&, conn_it] { return conn_it->second.inbound_messages_.size() > 0; } );
-
   }
 }
 
@@ -255,8 +249,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
     Direction::In,
     listener_socket_,
     [&] {
-     
-      clients_.emplace_back( listener_socket_.accept()  );
+      clients_.emplace_back( listener_socket_.accept() );
       auto client_it = prev( clients_.end() );
 
       client_it->socket_.set_blocking( false );
@@ -408,23 +401,22 @@ void StorageServer::install_rules( EventLoop& event_loop )
           client_it->ordered_tags.pop();
         },
         [&, client_it] {
-          return not client_it->ordered_tags.empty() && client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
-                 != client_it->buffered_remote_responses_.end();
+          return not client_it->ordered_tags.empty()
+                 && client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
+                      != client_it->buffered_remote_responses_.end();
         } ) );
 
-      client_it->install_rules(event_loop, 
-        [&, client_it, rtd = rules_to_delete] {
-            std::cout << "died" << std::endl;
-            std::cout << "remove all references of this client in outstanding_remote_request not implemented yet"
-                      << std::endl;
+      client_it->install_rules( event_loop, [&, client_it, rtd = rules_to_delete] {
+        std::cout << "died" << std::endl;
+        std::cout << "remove all references of this client in outstanding_remote_request not implemented yet"
+                  << std::endl;
 
-            clients_.erase( client_it );
+        clients_.erase( client_it );
 
-            for (size_t i = 0; i < rtd.size(); i++) {
-              rtd[i].cancel();
-            }
-          } 
-        );
+        for ( size_t i = 0; i < rtd.size(); i++ ) {
+          rtd[i].cancel();
+        }
+      } );
     },
     [&] { return true; } );
 }
@@ -443,9 +435,8 @@ int main( int argc, char* argv[] )
   echo.install_rules( loop );
   // std::map<size_t, std::string> input {{0,argv[1]}};
   // echo.connect(input, loop);
-  //echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
+  // echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
   echo.set_up_local();
-  
 
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )

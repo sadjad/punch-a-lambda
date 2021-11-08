@@ -4,8 +4,8 @@
 
 #include "exception.hh"
 #include "ring_buffer.hh"
-#include <sys/syscall.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 using namespace std;
 
 MMap_Region::MMap_Region( char* const addr,
@@ -39,8 +39,7 @@ RingBuffer::RingBuffer( const size_t capacity )
       throw runtime_error( "RingBuffer capacity must be multiple of page size (" + to_string( sysconf( _SC_PAGESIZE ) )
                            + ")" );
     }
-    FileDescriptor fd { SystemCall( "memfd_create",
-                                    syscall( SYS_memfd_create, "RingBuffer", 0 ) ) };
+    FileDescriptor fd { SystemCall( "memfd_create", syscall( SYS_memfd_create, "RingBuffer", 0 ) ) };
     SystemCall( "ftruncate", ftruncate( fd.fd_num(), capacity ) );
     return fd;
   }() )

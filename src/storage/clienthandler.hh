@@ -40,17 +40,16 @@ struct ClientHandler
   std::unordered_map<int, std::vector<OutboundMessage>> buffered_remote_responses_ {};
   std::queue<int> ordered_tags {};
 
-  std::vector<EventLoop::RuleHandle> things_to_kill {}; 
+  std::vector<EventLoop::RuleHandle> things_to_kill {};
 
   // fsm:
   // state 0: starting state, don't know expected length
   // state 1: in the middle of a message
   // check test.py to see python reference FSM for receiving
 
-  ClientHandler(TCPSocket && socket):
-  socket_(std::move(socket))
-  {
-  }
+  ClientHandler( TCPSocket&& socket )
+    : socket_( std::move( socket ) )
+  {}
 
   void parse()
   {
@@ -111,56 +110,45 @@ struct ClientHandler
         outbound_messages_.pop_front();
       } else {
         message.message.outptr.second -= bytes_wrote;
-        message.message.outptr.first = reinterpret_cast<const void * > (reinterpret_cast<const char*>( message.message.outptr.first ) + bytes_wrote); 
+        message.message.outptr.first = reinterpret_cast<const void*>(
+          reinterpret_cast<const char*>( message.message.outptr.first ) + bytes_wrote );
       }
     }
   }
 
-  void install_rules(EventLoop & loop, std::function<void( void )>&& close_callback)
+  void install_rules( EventLoop& loop, std::function<void( void )>&& close_callback )
   {
-    things_to_kill.push_back(loop.add_rule(
-        "http",
-        socket_,
-        [&] {
-            read_buffer_.read_from( socket_ );
-            std::cout << read_buffer_.readable_region().length() << std::endl;
-        },
-        [&] {
-            return not read_buffer_.writable_region().empty();
-        },
-        [&] {
-            send_buffer_.write_to( socket_ );
-        },
-        [&] {
-            return not send_buffer_.readable_region().empty();
-        },
-        [&, f = move(close_callback)] {
-            std::cout << "client died" << std::endl;
-            f();
-            socket_.close();
-        } ));
+    things_to_kill.push_back( loop.add_rule(
+      "http",
+      socket_,
+      [&] {
+        read_buffer_.read_from( socket_ );
+        std::cout << read_buffer_.readable_region().length() << std::endl;
+      },
+      [&] { return not read_buffer_.writable_region().empty(); },
+      [&] { send_buffer_.write_to( socket_ ); },
+      [&] { return not send_buffer_.readable_region().empty(); },
+      [&, f = move( close_callback )] {
+        std::cout << "client died" << std::endl;
+        f();
+        socket_.close();
+      } ) );
 
-    things_to_kill.push_back(loop.add_rule(
-        "receive messages",
-        [&] { parse(); },
-        [&] {
-          return temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty();
-        } ));
+    things_to_kill.push_back( loop.add_rule(
+      "receive messages",
+      [&] { parse(); },
+      [&] { return temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty(); } ) );
 
-    things_to_kill.push_back(loop.add_rule(
-        "write responses",
-        [&] {produce(); },
-        [&] {
-          return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty();
-        } ));
+    things_to_kill.push_back( loop.add_rule(
+      "write responses",
+      [&] { produce(); },
+      [&] { return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty(); } ) );
   }
 
   ~ClientHandler()
   {
-    for(auto & it : things_to_kill)
-    {
-        it.cancel();
+    for ( auto& it : things_to_kill ) {
+      it.cancel();
     }
   }
-
 };
