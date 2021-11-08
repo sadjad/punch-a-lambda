@@ -127,7 +127,7 @@ EventLoop::RuleHandle EventLoop::add_rule( const size_t category_id,
   return _non_fd_rules.back();
 }
 
-void EventLoop::RuleHandle::cancel()
+void EventLoop::RuleHandle::cancel() const
 {
   const shared_ptr<BasicRule> rule_shared_ptr = rule_weak_ptr_.lock();
   if ( rule_shared_ptr ) {

@@ -143,7 +143,7 @@ public:
       : rule_weak_ptr_( x )
     {}
 
-    void cancel();
+    void cancel() const;
   };
 
   RuleHandle add_rule(

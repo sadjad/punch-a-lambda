@@ -116,7 +116,7 @@ struct ClientHandler
     }
   }
 
-  void install_rules(EventLoop & loop, const std::function<void( void )>& close_callback)
+  void install_rules(EventLoop & loop, std::function<void( void )>&& close_callback)
   {
     things_to_kill.push_back(loop.add_rule(
         "http",
@@ -134,7 +134,7 @@ struct ClientHandler
         [&] {
             return not send_buffer_.readable_region().empty();
         },
-        [&, f= close_callback] {
+        [&, f = move(close_callback)] {
             std::cout << "client died" << std::endl;
             f();
             socket_.close();

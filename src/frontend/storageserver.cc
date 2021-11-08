@@ -262,18 +262,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
       client_it->socket_.set_blocking( false );
       std::cout << "accepted connection" << std::endl;
 
-      
-      client_it->install_rules(event_loop, 
-      [&, client_it] {
-          std::cout << "died" << std::endl;
-          std::cout << "remove all references of this client in outstanding_remote_request not implemented yet"
-                    << std::endl;
-          client_it->socket_.close();
-          clients_.erase( client_it );
-        } 
-      );
+      std::vector<EventLoop::RuleHandle> rules_to_delete;
 
-      event_loop.add_rule(
+      rules_to_delete.push_back( event_loop.add_rule(
         "pop messages",
         [&, client_it] {
           std::string message = client_it->inbound_messages_.front();
@@ -404,9 +395,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
             }
           }
         },
-        [&, client_it] { return client_it->inbound_messages_.size() > 0; } );
+        [&, client_it] { return client_it->inbound_messages_.size() > 0; } ) );
 
-      event_loop.add_rule(
+      rules_to_delete.push_back( event_loop.add_rule(
         "buffer to responses",
         [&, client_it] {
           for ( auto it : client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )->second ) {
@@ -417,9 +408,23 @@ void StorageServer::install_rules( EventLoop& event_loop )
           client_it->ordered_tags.pop();
         },
         [&, client_it] {
-          return client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
+          return not client_it->ordered_tags.empty() && client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
                  != client_it->buffered_remote_responses_.end();
-        } );
+        } ) );
+
+      client_it->install_rules(event_loop, 
+        [&, client_it, rtd = rules_to_delete] {
+            std::cout << "died" << std::endl;
+            std::cout << "remove all references of this client in outstanding_remote_request not implemented yet"
+                      << std::endl;
+
+            clients_.erase( client_it );
+
+            for (size_t i = 0; i < rtd.size(); i++) {
+              rtd[i].cancel();
+            }
+          } 
+        );
     },
     [&] { return true; } );
 }
