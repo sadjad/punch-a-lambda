@@ -1,7 +1,9 @@
 #include "assert.h"
 
+#include <iostream>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "util/util.hh"
 
@@ -16,62 +18,98 @@ public:
   void allow( int key );
 };
 
-UniqueTagGenerator::UniqueTagGenerator( int size )
-{
-  for ( int i = 0; i < size; i++ ) {
-    allowed.insert( i );
-  }
-}
+namespace msg {
 
-int UniqueTagGenerator::emit()
+enum class MessageType
 {
-  if ( allowed.size() > 0 ) {
-    int key = *( allowed.begin() );
-    allowed.erase( key );
-    return key;
-  } else {
-    assert( false );
-    return 1;
-  }
-}
+  Local,
+  Remote
+};
 
-void UniqueTagGenerator::allow( int key )
+// only the last byte is used in the msg::Message header
+enum class OpCode : uint16_t
 {
-  allowed.insert( key );
-}
+  // remote requests
+  RemoteLookup = 0x1,
+  RemoteStore = 0x2,
+  RemoteDelete = 0x3,
+
+  // remote responses
+  RemoteSuccess = 0x0,
+  RemoteObject = 0x2,
+  RemoteError = 0x5,
+
+  // local requests
+  LocalLookup = 0xF1,
+  LocalStore = 0xF2,
+  LocalDelete = 0xF6,
+  LocalRemoteLookup = 0xF3,
+  LocalRemoteStore = 0xF4,
+  LocalRemoteDelete = 0xF7,
+
+  // local responses
+  LocalSuccess = 0xF0,
+  LocalError = 0xF5,
+};
+
+enum class MessageField : uint8_t
+{
+  Name,
+  Object,
+  Message,
+  RemoteNode,
+};
+
+struct Message
+{
+private:
+  MessageType type_;
+  size_t field_count_;
+
+  uint32_t length_ {};
+  OpCode opcode_ {};
+  int32_t tag_ {};
+
+  std::vector<std::string> fields_ {};
+
+  void calculate_length();
+
+public:
+  Message( const OpCode opcode, const int32_t tag = 0 );
+  Message( const MessageType type, const std::string& str );
+
+  //! \returns serialized msg::Message ready to be sent over the wire
+  std::string to_string();
+
+  void set_field( const MessageField f, std::string&& s );
+  std::string& get_field( const MessageField f );
+
+  OpCode opcode() const { return opcode_; }
+  int32_t tag() const { return tag_; }
+};
+
+} // namespace msg
 
 class MessageHandler
 {
 public:
-  enum RemoteOpCode : int
-  {
-    LOOKUP = 1,
-    STORE = 2,
-    DELETE = 3
-  };
-  // rely on RVO for the return value
-
   // generate REMOTE REQUEST
 
   std::string generate_remote_lookup( int tag, std::string name )
   {
-    std::string remote_request { "0000" + std::to_string( LOOKUP ) + "0000" + name };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() ) );
-    p[0] = name.length() + 9;
-    p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );
-    p[0] = tag;
-    return remote_request;
-  };
+    msg::Message remote_request { msg::OpCode::RemoteLookup, tag };
+    remote_request.set_field( msg::MessageField::Name, std::move( name ) );
+    return remote_request.to_string();
+  }
+
   std::string generate_remote_delete( int tag, std::string name )
   {
-    std::string remote_request { "000030000" + name };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() ) );
-    p[0] = name.length() + 9;
-    p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );
-    p[0] = tag;
-    return remote_request;
-  };
-  // note that we send remote store as two messages, the first is a plaintext header and the second is a ptr payload
+    msg::Message remote_request { msg::OpCode::RemoteDelete, tag };
+    remote_request.set_field( msg::MessageField::Name, std::move( name ) );
+    return remote_request.to_string();
+  }
+
+  // TODO: rewrite this function in the 'new' way
   std::string generate_remote_store_header( int tag, std::string name, int payload_size )
   {
     std::string remote_request { "0000200000000" + name };
@@ -86,47 +124,41 @@ public:
 
   std::string generate_remote_error( int tag, std::string error )
   {
-    std::string message { "000050000" + error };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() ) );
-    p[0] = message.length();
-    p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() + 5 ) );
-    p[0] = tag;
-    return message;
-  };
+    msg::Message message { msg::OpCode::RemoteError, tag };
+    message.set_field( msg::MessageField::Message, move( error ) );
+    return message.to_string();
+  }
+
   std::string generate_remote_success( int tag, std::string error )
   {
-    std::string message { "000000000" + error };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() ) );
-    p[0] = message.length();
-    p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() + 5 ) );
-    p[0] = tag;
-    return message;
-  };
+    msg::Message message { msg::OpCode::RemoteSuccess, tag };
+    message.set_field( msg::MessageField::Message, move( error ) );
+    return message.to_string();
+  }
 
   // parse REMOTE REQUEST
 
   std::tuple<std::string, int> parse_remote_lookup( std::string request )
   {
-    int tag = *reinterpret_cast<const int*>( ( request.c_str() + 1 ) );
-    std::string name = request.substr( 5 );
-    return { name, tag };
-  };
-  std::tuple<std::string, int, int> parse_remote_store( std::string request )
+    msg::Message message { msg::MessageType::Remote, request };
+    return { message.get_field( msg::MessageField::Name ), message.tag() };
+  }
+
+  std::tuple<std::string, int> parse_remote_store( std::string request )
   {
-    int tag = *reinterpret_cast<const int*>( ( request.c_str() + 1 ) );
-    int size = *reinterpret_cast<const int*>( ( request.c_str() + 5 ) );
-    std::string name = request.substr( 9, size ); // name can only be 4 characters for now
-    return { name, size, tag };
-  };
+    msg::Message message { msg::MessageType::Remote, request };
+    return { message.get_field( msg::MessageField::Name ), message.tag() };
+  }
+
   std::tuple<std::string, int> parse_remote_error( std::string request )
   {
-    int tag = *reinterpret_cast<const int*>( ( request.c_str() + 1 ) );
-    std::string name = request.substr( 5 );
-    return { name, tag };
-  };
+    msg::Message message { msg::MessageType::Remote, request };
+    return { message.get_field( msg::MessageField::Message ), message.tag() };
+  }
 
   // generate LOCAL RESPONSE
 
+  // TODO: rewrite this function in the 'new' way
   std::string generate_local_object_header( std::string name, int payload_size )
   {
     std::string remote_request { "000020000" + name };
@@ -135,42 +167,45 @@ public:
     p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );
     p[0] = name.length();
     return remote_request;
-  };
+  }
 
   std::string generate_local_error( std::string error )
   {
-    std::string message { "00005" + error };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() ) );
-    p[0] = message.length();
-    return message;
-  };
+    msg::Message message { msg::OpCode::LocalError };
+    message.set_field( msg::MessageField::Message, move( error ) );
+    return message.to_string();
+  }
+
   std::string generate_local_success( std::string error )
   {
-    std::string message { "00000" + error };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() ) );
-    p[0] = message.length();
-    return message;
-  };
+    msg::Message message { msg::OpCode::LocalSuccess };
+    message.set_field( msg::MessageField::Message, move( error ) );
+    return message.to_string();
+  }
 
   // parse LOCAL REQUEST
 
   std::tuple<std::string, int> parse_local_remote_lookup( std::string message )
   {
-    int size = *reinterpret_cast<const int*>( ( message.c_str() + 1 ) );
-    std::cout << "size " << size << ";" << std::endl;
-    std::string name = message.substr( 5, size );
-    int id = *reinterpret_cast<const int*>( ( message.c_str() + 5 + size ) );
+    msg::Message request { msg::MessageType::Local, message };
+    const auto name = request.get_field( msg::MessageField::Name );
+    const auto id = *reinterpret_cast<const int*>( request.get_field( msg::MessageField::RemoteNode ).c_str() );
+
     return { name, id };
   }
-  std::string parse_local_lookup( std::string request ) { return request.substr( 1 ); };
+
+  std::string parse_local_lookup( std::string request )
+  {
+    msg::Message message { msg::MessageType::Local, request };
+    return message.get_field( msg::MessageField::Name );
+  };
 
   // generate LOCAL REQUEST
 
   std::string generate_local_lookup( std::string name )
   {
-    std::string message { "00001" + name };
-    int* p = reinterpret_cast<int*>( const_cast<char*>( message.c_str() ) );
-    p[0] = message.length();
-    return message;
+    msg::Message request { msg::OpCode::LocalLookup };
+    request.set_field( msg::MessageField::Name, move( name ) );
+    return request.to_string();
   };
 };
