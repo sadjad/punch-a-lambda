@@ -149,8 +149,8 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
           case 2: {
             auto result = message_handler_.parse_remote_store( msg );
             std::string name = std::get<0>( result );
-            int size = std::get<1>( result );
-            int tag = std::get<2>( result );
+            int size = name.length();
+            int tag = std::get<1>( result );
 
             auto success = my_storage_.new_object_from_string( name, std::move( msg.substr( 9 + size ) ) );
             if ( success == 0 ) {
@@ -322,7 +322,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
               std::string name = message.substr( 5, size );
               auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
               if ( success == 0 ) {
-                OutboundMessage response = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
+                OutboundMessage response
+                  = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
                 client_it->outbound_messages_.emplace_back( std::move( response ) );
               } else {
                 OutboundMessage response
