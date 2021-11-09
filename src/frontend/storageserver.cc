@@ -319,7 +319,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               std::string name = message.substr( 5, size );
               auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
               if ( success == 0 ) {
-                OutboundMessage response = { plaintext, { {}, std::move( "made new object with pointer" ) } };
+                OutboundMessage response = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
                 client_it->outbound_messages_.emplace_back( std::move( response ) );
               } else {
                 OutboundMessage response

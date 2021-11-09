@@ -57,7 +57,7 @@ int main( int argc, char* argv[] )
   loop.add_rule(
     "print inbound messages",
     [&] {
-      std::cout << new_client.inbound_messages_.front() << std::endl;
+      std::cout << "inbound messages" << new_client.inbound_messages_.front() << std::endl;
       new_client.inbound_messages_.pop_front();
     },
     [&] { return new_client.inbound_messages_.size() > 0; } );
