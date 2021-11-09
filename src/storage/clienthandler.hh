@@ -104,7 +104,7 @@ struct ClientHandler
 
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
-      std::cout << "producing ptr " << a << std::endl;
+      //std::cout << "producing ptr " << a << std::endl;
       const size_t bytes_wrote = send_buffer_.write( a );
       if ( bytes_wrote == a.length() ) {
         outbound_messages_.pop_front();

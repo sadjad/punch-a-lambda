@@ -41,18 +41,31 @@ int main( int argc, char* argv[] )
   } );
 
   MessageHandler message_handler_;
-  std::string object = "1234";
-  std::string name = "quokka";
-  OutboundMessage request1_header
-    = { plaintext, { {}, message_handler_.generate_local_object_header( name, object.size() ) } };
-  OutboundMessage request1 = { pointer, { { object.c_str(), object.size() }, {} } };
 
-  new_client.outbound_messages_.push_back( request1_header );
-  new_client.outbound_messages_.push_back( request1 );
+  std::vector<std::string> objects {};
+  std::vector<std::string> names {};
 
-  OutboundMessage request2 = { plaintext, { {}, message_handler_.generate_local_lookup( name ) } };
+  int it = 1000;
 
-  new_client.outbound_messages_.push_back( request2 );
+  for(int i =0 ; i < it; i ++)
+  {
+    objects.emplace_back("object" + to_string(i));
+    names.emplace_back("name" + to_string(i + 1));
+  }
+
+  for(int i =0 ; i < it; i ++)
+  {
+    OutboundMessage request1_header
+      = { plaintext, { {}, message_handler_.generate_local_object_header( names[i], objects[i].size() ) } };
+    OutboundMessage request1 = { pointer, { { objects[i].c_str(), objects[i].size() }, {} } };
+
+    new_client.outbound_messages_.push_back( request1_header );
+    new_client.outbound_messages_.push_back( request1 );
+
+    OutboundMessage request2 = { plaintext, { {}, message_handler_.generate_local_lookup( names[i] ) } };
+
+    new_client.outbound_messages_.push_back( request2 );
+  }
 
   loop.add_rule(
     "print inbound messages",

@@ -293,12 +293,15 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
             case 1: {
               std::string name = message_handler_.parse_local_lookup( message );
-              std::cout << "looking up:" << name << ";" << std::endl;
+              //std::cout << "looking up:" << name << ";" << std::endl;
               auto a = my_storage_.locate( name );
               if ( a.has_value() ) {
-                std::cout << "a has value" << std::endl;
+                //std::cout << "a has value" << std::endl;
                 OutboundMessage response_header
                   = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.value().size ) } };
+                std::string_view bump( reinterpret_cast<const char*>( a.value().ptr ),
+                          a.value().size );
+                //std::cout << "looked up " << bump << std::endl;
                 OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
                 client_it->outbound_messages_.emplace_back( std::move( response_header ) );
                 client_it->outbound_messages_.emplace_back( std::move( response ) );
