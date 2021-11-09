@@ -121,17 +121,13 @@ struct ClientHandler
     things_to_kill.push_back( loop.add_rule(
       "http",
       socket_,
-      [&] {
-        read_buffer_.read_from( socket_ );
-        std::cout << read_buffer_.readable_region().length() << std::endl;
-      },
+      [&] { read_buffer_.read_from( socket_ ); },
       [&] { return not read_buffer_.writable_region().empty(); },
       [&] { send_buffer_.write_to( socket_ ); },
       [&] { return not send_buffer_.readable_region().empty(); },
       [&, f = move( close_callback )] {
         std::cout << "client died" << std::endl;
         f();
-        socket_.close();
       } ) );
 
     things_to_kill.push_back( loop.add_rule(
