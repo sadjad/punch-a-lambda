@@ -45,7 +45,7 @@ int main( int argc, char* argv[] )
   std::vector<std::string> objects {};
   std::vector<std::string> names {};
 
-  int it = 1000;
+  int it = 2;
 
   for(int i =0 ; i < it; i ++)
   {

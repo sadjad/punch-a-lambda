@@ -132,12 +132,16 @@ struct ClientHandler
 
     things_to_kill.push_back( loop.add_rule(
       "receive messages",
-      [&] { parse(); },
+      //[&] { while(temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty()) {parse();} },
+            [&] { parse(); },
+
       [&] { return temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty(); } ) );
 
     things_to_kill.push_back( loop.add_rule(
       "write responses",
-      [&] { produce(); },
+      //[&] { while(outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty()) {produce();} },
+            [&] { produce(); },
+
       [&] { return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty(); } ) );
   }
 
