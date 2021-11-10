@@ -84,7 +84,7 @@ Message::Message( const MessageType type, const std::string& str )
   : type_( type )
   , field_count_( 0 )
 {
-  const size_t min_length = sizeof( opcode_ ) + ( type_ == MessageType::Remote ) ? sizeof( tag_ ) : 0;
+  const size_t min_length = sizeof( uint8_t ) + ( ( type_ == MessageType::Remote ) ? sizeof( tag_ ) : 0 );
 
   if ( str.length() < min_length ) {
     throw std::runtime_error( "str too short" );
@@ -132,13 +132,14 @@ Message::Message( const MessageType type, const std::string& str )
 
 void Message::calculate_length()
 {
-  length_ = sizeof( length_ ) + sizeof( opcode_ ) + ( type_ == MessageType::Remote ) ? sizeof( tag_ ) : 0;
+  length_ = sizeof( length_ ) + sizeof( uint8_t ) + ( ( type_ == MessageType::Remote ) ? sizeof( tag_ ) : 0 );
 
-  for ( size_t i = 0; i < field_count_ - 1; i++ ) {
-    length_ += sizeof( uint32_t ) /* field length */ + fields_[i].length() /* value length */;
+  for ( size_t i = 0; i < field_count_; i++ ) {
+    if ( i != field_count_ - 1 ) {
+      length_ += sizeof( uint32_t ) /* field length */;
+    }
+    length_ += fields_[i].length() /* value length */;
   }
-
-  length_ += fields_[field_count_ - 1].length();
 }
 
 std::string Message::to_string()
