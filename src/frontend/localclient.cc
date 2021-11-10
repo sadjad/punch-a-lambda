@@ -45,16 +45,14 @@ int main( int argc, char* argv[] )
   std::vector<std::string> objects {};
   std::vector<std::string> names {};
 
-  int it = 10;
+  int it = 1000;
 
-  for(int i =0 ; i < it; i ++)
-  {
-    objects.emplace_back("object" + to_string(i));
-    names.emplace_back("name" + to_string(i + 1));
+  for ( int i = 0; i < it; i++ ) {
+    objects.emplace_back( "object" + to_string( i ) );
+    names.emplace_back( "name" + to_string( i + 1 ) );
   }
 
-  for(int i =0 ; i < it; i ++)
-  {
+  for ( int i = 0; i < it; i++ ) {
     OutboundMessage request1_header
       = { plaintext, { {}, message_handler_.generate_local_object_header( names[i], objects[i].size() ) } };
     OutboundMessage request1 = { pointer, { { objects[i].c_str(), objects[i].size() }, {} } };
@@ -70,8 +68,10 @@ int main( int argc, char* argv[] )
   loop.add_rule(
     "print inbound messages",
     [&] {
-      std::cout << "inbound messages" << new_client.inbound_messages_.front() << std::endl;
-      new_client.inbound_messages_.pop_front();
+      while ( not new_client.inbound_messages_.empty() ) {
+        std::cout << "inbound messages" << new_client.inbound_messages_.front() << std::endl;
+        new_client.inbound_messages_.pop_front();
+      }
     },
     [&] { return new_client.inbound_messages_.size() > 0; } );
 

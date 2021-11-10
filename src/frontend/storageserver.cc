@@ -106,134 +106,136 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     event_loop.add_rule(
       "pop messages",
       [&, conn_it] {
-        std::string msg = conn_it->second.inbound_messages_.front();
-        conn_it->second.inbound_messages_.pop_front();
-        std::cout << "message received " << msg << std::endl;
+        while ( not conn_it->second.inbound_messages_.empty() ) {
+          std::string msg = conn_it->second.inbound_messages_.front();
+          conn_it->second.inbound_messages_.pop_front();
+          std::cout << "message received " << msg << std::endl;
 
-        int opcode = stoi( msg.substr( 0, 1 ) );
-        switch ( opcode ) {
+          int opcode = stoi( msg.substr( 0, 1 ) );
+          switch ( opcode ) {
 
-            // new object creation in localstorage, returns the pointer value as a string
-            // currently useless without shared memory, but will be useful when shared memory is implemented.
-            // look up an object in localstorage and stream out its contents to the output socket
+              // new object creation in localstorage, returns the pointer value as a string
+              // currently useless without shared memory, but will be useful when shared memory is implemented.
+              // look up an object in localstorage and stream out its contents to the output socket
 
-          case 1: {
-            auto result = message_handler_.parse_remote_lookup( msg );
-            std::string name = std::get<0>( result );
-            int tag = std::get<1>( result );
-            std::cout << "looking up:" << name << ";" << std::endl;
-            auto a = my_storage_.locate( name );
+            case 1: {
+              auto result = message_handler_.parse_remote_lookup( msg );
+              std::string name = std::get<0>( result );
+              int tag = std::get<1>( result );
+              std::cout << "looking up:" << name << ";" << std::endl;
+              auto a = my_storage_.locate( name );
 
-            if ( a.has_value() ) {
+              if ( a.has_value() ) {
 
-              std::cout << "found object" << std::endl;
+                std::cout << "found object" << std::endl;
 
-              // we are actually going to just send a opcode 2 response right back to the one who sent the request.
-              std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
-              OutboundMessage response_header = { plaintext, { {}, std::move( remote_request ) } };
-              conn_it->second.outbound_messages_.emplace_back( std::move( response_header ) );
-              OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
-              conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
-            } else {
-
-              std::cout << "did not find object" << std::endl;
-
-              std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
-              OutboundMessage response = { plaintext, { {}, std::move( message ) } };
-              conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
-            }
-            break;
-          }
-          // remote store request from this connection, must have been initiated by a remote lookup request sent from
-          // here
-          case 2: {
-            auto result = message_handler_.parse_remote_store( msg );
-            std::string name = std::get<0>( result );
-            int size = name.length();
-            int tag = std::get<1>( result );
-
-            auto success = my_storage_.new_object_from_string( name, std::move( msg.substr( 9 + size ) ) );
-            if ( success == 0 ) {
-              auto requesting_client = outstanding_remote_requests_.find( tag );
-              if ( requesting_client == outstanding_remote_requests_.end() ) {
-                std::cout << "received remote object that nobody has asked for, storing it locally" << std::endl;
+                // we are actually going to just send a opcode 2 response right back to the one who sent the request.
+                std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
+                OutboundMessage response_header = { plaintext, { {}, std::move( remote_request ) } };
+                conn_it->second.outbound_messages_.emplace_back( std::move( response_header ) );
+                OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
+                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               } else {
-                auto a = my_storage_.locate( name ).value();
-                OutboundMessage response_header
-                  = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.size ) } };
-                OutboundMessage response = { pointer, { { a.ptr, a.size }, {} } };
-                requesting_client->second->buffered_remote_responses_[tag] = { response_header, response };
+
+                std::cout << "did not find object" << std::endl;
+
+                std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
+                OutboundMessage response = { plaintext, { {}, std::move( message ) } };
+                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               }
+              break;
+            }
+            // remote store request from this connection, must have been initiated by a remote lookup request sent from
+            // here
+            case 2: {
+              auto result = message_handler_.parse_remote_store( msg );
+              std::string name = std::get<0>( result );
+              int size = name.length();
+              int tag = std::get<1>( result );
 
-            } else {
-              auto requesting_client = outstanding_remote_requests_.find( tag );
-              if ( requesting_client == outstanding_remote_requests_.end() ) {
-                std::cout << "received remote object nobody asked for, couldn't store it" << std::endl;
-              } else {
-                auto a = my_storage_.locate( name );
-                if ( a.has_value() ) {
-                  auto b = a.value();
-                  OutboundMessage response_header
-                    = { plaintext, { {}, message_handler_.generate_local_object_header( name, b.size ) } };
-                  OutboundMessage response = { pointer, { { b.ptr, b.size }, {} } };
-                  requesting_client->second->buffered_remote_responses_[tag] = { response_header, response };
+              auto success = my_storage_.new_object_from_string( name, std::move( msg.substr( 9 + size ) ) );
+              if ( success == 0 ) {
+                auto requesting_client = outstanding_remote_requests_.find( tag );
+                if ( requesting_client == outstanding_remote_requests_.end() ) {
+                  std::cout << "received remote object that nobody has asked for, storing it locally" << std::endl;
                 } else {
-                  OutboundMessage response
-                    = { plaintext,
-                        { {},
-                          message_handler_.generate_local_error( "can't create new local object with ptr, object also "
-                                                                 "not in storage (could it be too big?)" ) } };
-                  requesting_client->second->buffered_remote_responses_[tag] = { response };
+                  auto a = my_storage_.locate( name ).value();
+                  OutboundMessage response_header
+                    = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.size ) } };
+                  OutboundMessage response = { pointer, { { a.ptr, a.size }, {} } };
+                  requesting_client->second->buffered_remote_responses_[tag] = { response_header, response };
+                }
+
+              } else {
+                auto requesting_client = outstanding_remote_requests_.find( tag );
+                if ( requesting_client == outstanding_remote_requests_.end() ) {
+                  std::cout << "received remote object nobody asked for, couldn't store it" << std::endl;
+                } else {
+                  auto a = my_storage_.locate( name );
+                  if ( a.has_value() ) {
+                    auto b = a.value();
+                    OutboundMessage response_header
+                      = { plaintext, { {}, message_handler_.generate_local_object_header( name, b.size ) } };
+                    OutboundMessage response = { pointer, { { b.ptr, b.size }, {} } };
+                    requesting_client->second->buffered_remote_responses_[tag] = { response_header, response };
+                  } else {
+                    OutboundMessage response = { plaintext,
+                                                 { {},
+                                                   message_handler_.generate_local_error(
+                                                     "can't create new local object with ptr, object also "
+                                                     "not in storage (could it be too big?)" ) } };
+                    requesting_client->second->buffered_remote_responses_[tag] = { response };
+                  }
                 }
               }
+              // reallow this tag.
+              tag_generator_.allow( tag );
+              break;
             }
-            // reallow this tag.
-            tag_generator_.allow( tag );
-            break;
-          }
-          // delete
-          case 3: {
-            // parse remote delete and parse remote lookup should be the same.
-            auto result = message_handler_.parse_remote_lookup( msg );
-            std::string name = std::get<0>( result );
-            int tag = std::get<1>( result );
-            std::cout << "looking up:" << name << ";" << std::endl;
-            int a = my_storage_.delete_object( name );
-            if ( a == 0 ) {
-              OutboundMessage response
-                = { plaintext, { {}, message_handler_.generate_remote_success( tag, "deleted " + name ) } };
-              conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
-            } else {
-              OutboundMessage response
-                = { plaintext, { {}, message_handler_.generate_remote_error( tag, "failed to delete " + name ) } };
-              conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+            // delete
+            case 3: {
+              // parse remote delete and parse remote lookup should be the same.
+              auto result = message_handler_.parse_remote_lookup( msg );
+              std::string name = std::get<0>( result );
+              int tag = std::get<1>( result );
+              std::cout << "looking up:" << name << ";" << std::endl;
+              int a = my_storage_.delete_object( name );
+              if ( a == 0 ) {
+                OutboundMessage response
+                  = { plaintext, { {}, message_handler_.generate_remote_success( tag, "deleted " + name ) } };
+                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+              } else {
+                OutboundMessage response
+                  = { plaintext, { {}, message_handler_.generate_remote_error( tag, "failed to delete " + name ) } };
+                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+              }
+              tag_generator_.allow( tag );
+              break;
             }
-            tag_generator_.allow( tag );
-            break;
-          }
 
-          // got an opcode with an error code related to a remote request likely
+            // got an opcode with an error code related to a remote request likely
 
-          // currently remote success and remote failure get handled the same way
-          case 0:
-          case 5: {
-            auto error = message_handler_.parse_remote_error( msg );
-            int tag = std::get<1>( error );
-            std::string message = std::get<0>( error );
-            auto requesting_client = outstanding_remote_requests_.find( tag );
-            if ( requesting_client == outstanding_remote_requests_.end() ) {
-              std::cout << "received a remote message with a wierd tag, something's wrong" << std::endl;
-            } else {
-              OutboundMessage response = { plaintext, { {}, std::move( message ) } };
-              requesting_client->second->buffered_remote_responses_[tag] = { response };
+            // currently remote success and remote failure get handled the same way
+            case 0:
+            case 5: {
+              auto error = message_handler_.parse_remote_error( msg );
+              int tag = std::get<1>( error );
+              std::string message = std::get<0>( error );
+              auto requesting_client = outstanding_remote_requests_.find( tag );
+              if ( requesting_client == outstanding_remote_requests_.end() ) {
+                std::cout << "received a remote message with a wierd tag, something's wrong" << std::endl;
+              } else {
+                OutboundMessage response = { plaintext, { {}, std::move( message ) } };
+                requesting_client->second->buffered_remote_responses_[tag] = { response };
+              }
+              break;
             }
-            break;
-          }
-          default: {
-            OutboundMessage response
-              = { plaintext, { {}, message_handler_.generate_local_error( "unidentified opcode" ) } };
-            conn_it->second.outbound_messages_.emplace_back( response );
-            break;
+            default: {
+              OutboundMessage response
+                = { plaintext, { {}, message_handler_.generate_local_error( "unidentified opcode" ) } };
+              conn_it->second.outbound_messages_.emplace_back( response );
+              break;
+            }
           }
         }
       },
@@ -260,135 +262,137 @@ void StorageServer::install_rules( EventLoop& event_loop )
       rules_to_delete.push_back( event_loop.add_rule(
         "pop messages",
         [&, client_it] {
-          std::string message = client_it->inbound_messages_.front();
-          client_it->inbound_messages_.pop_front();
-          std::cout << "message recevid " << message << std::endl;
+          while ( not client_it->inbound_messages_.empty() ) {
+            std::string message = client_it->inbound_messages_.front();
+            client_it->inbound_messages_.pop_front();
+            std::cout << "message recevid " << message << std::endl;
 
-          int opcode = stoi( message.substr( 0, 1 ) );
-          switch ( opcode ) {
+            int opcode = stoi( message.substr( 0, 1 ) );
+            switch ( opcode ) {
 
-              // new object creation in localstorage, returns the pointer value as a string
-              // currently useless without shared memory, but will be useful when shared memory is implemented.
+                // new object creation in localstorage, returns the pointer value as a string
+                // currently useless without shared memory, but will be useful when shared memory is implemented.
 
-            case 0: {
-              int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
-              std::cout << "size " << size << ";" << std::endl;
-              std::string name = message.substr( 5 );
-              std::cout << "storing:" << name << ";" << std::endl;
-              auto a = my_storage_.new_object( name, size );
-              if ( a.has_value() ) {
-                std::stringstream result;
-                result << a.value();
-                OutboundMessage response = { plaintext, { {}, std::move( result.str() ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
-              } else {
-                OutboundMessage response
-                  = { plaintext, { {}, message_handler_.generate_local_error( "new object creation failed" ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
+              case 0: {
+                int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
+                std::cout << "size " << size << ";" << std::endl;
+                std::string name = message.substr( 5 );
+                std::cout << "storing:" << name << ";" << std::endl;
+                auto a = my_storage_.new_object( name, size );
+                if ( a.has_value() ) {
+                  std::stringstream result;
+                  result << a.value();
+                  OutboundMessage response = { plaintext, { {}, std::move( result.str() ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                } else {
+                  OutboundMessage response
+                    = { plaintext, { {}, message_handler_.generate_local_error( "new object creation failed" ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                }
+                break;
               }
-              break;
-            }
 
-              // look up an object in localstorage and stream out its contents to the output socket
+                // look up an object in localstorage and stream out its contents to the output socket
 
-            case 1: {
-              std::string name = message_handler_.parse_local_lookup( message );
-              //std::cout << "looking up:" << name << ";" << std::endl;
-              auto a = my_storage_.locate( name );
-              if ( a.has_value() ) {
-                //std::cout << "a has value" << std::endl;
-                OutboundMessage response_header
-                  = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.value().size ) } };
-                std::string_view bump( reinterpret_cast<const char*>( a.value().ptr ),
-                          a.value().size );
-                //std::cout << "looked up " << bump << std::endl;
-                OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
-                client_it->outbound_messages_.emplace_back( std::move( response_header ) );
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
-              } else {
-                std::cout << "a missing" << std::endl;
-                OutboundMessage response
-                  = { plaintext, { {}, message_handler_.generate_local_error( "can't find object" ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
+              case 1: {
+                std::string name = message_handler_.parse_local_lookup( message );
+                // std::cout << "looking up:" << name << ";" << std::endl;
+                auto a = my_storage_.locate( name );
+                if ( a.has_value() ) {
+                  // std::cout << "a has value" << std::endl;
+                  OutboundMessage response_header
+                    = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.value().size ) } };
+                  std::string_view bump( reinterpret_cast<const char*>( a.value().ptr ), a.value().size );
+                  // std::cout << "looked up " << bump << std::endl;
+                  OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
+                  client_it->outbound_messages_.emplace_back( std::move( response_header ) );
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                } else {
+                  std::cout << "a missing" << std::endl;
+                  OutboundMessage response
+                    = { plaintext, { {}, message_handler_.generate_local_error( "can't find object" ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                }
+                break;
               }
-              break;
-            }
 
-              // stores a new object by string into the localstorage
+                // stores a new object by string into the localstorage
 
-            case 2: {
-              int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
-              std::cout << "size " << size << ";" << std::endl;
-              std::string name = message.substr( 5, size );
-              auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
-              if ( success == 0 ) {
-                OutboundMessage response
-                  = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
-              } else {
-                OutboundMessage response
-                  = { plaintext, { {}, message_handler_.generate_local_error( "can't create new object with ptr" ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
+              case 2: {
+                int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
+                std::cout << "size " << size << ";" << std::endl;
+                std::string name = message.substr( 5, size );
+                auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
+                if ( success == 0 ) {
+                  OutboundMessage response
+                    = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                } else {
+                  OutboundMessage response
+                    = { plaintext,
+                        { {}, message_handler_.generate_local_error( "can't create new object with ptr" ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                }
+                break;
               }
-              break;
-            }
 
-            // tells the storage server to send a get request to a remote server
-            case 3: {
-              auto result = message_handler_.parse_local_remote_lookup( message );
-              std::string name = std::get<0>( result );
-              int id = std::get<1>( result );
+              // tells the storage server to send a get request to a remote server
+              case 3: {
+                auto result = message_handler_.parse_local_remote_lookup( message );
+                std::string name = std::get<0>( result );
+                int id = std::get<1>( result );
 
-              // generate a unique tag for this local request which will be used to identify it
-              int tag = tag_generator_.emit();
-              std::string remote_request = message_handler_.generate_remote_lookup( tag, name );
-              // we need to remember which client who made this request
-              outstanding_remote_requests_.insert( { tag, &*client_it } );
-              // push the tag into local FIFO queue to maintain response order
-              client_it->ordered_tags.push( tag );
+                // generate a unique tag for this local request which will be used to identify it
+                int tag = tag_generator_.emit();
+                std::string remote_request = message_handler_.generate_remote_lookup( tag, name );
+                // we need to remember which client who made this request
+                outstanding_remote_requests_.insert( { tag, &*client_it } );
+                // push the tag into local FIFO queue to maintain response order
+                client_it->ordered_tags.push( tag );
 
-              std::cout << remote_request << std::endl;
-              OutboundMessage response = { plaintext, { {}, remote_request } };
-              std::cout << id << std::endl;
-              connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
-              break;
-            }
-
-            case 6: {
-              std::string name = message_handler_.parse_local_lookup( message );
-              int result = my_storage_.delete_object( name );
-              if ( result == 0 ) {
-                OutboundMessage response
-                  = { plaintext, { {}, message_handler_.generate_local_success( "deleted " + name ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
-              } else {
-                OutboundMessage response
-                  = { plaintext, { {}, message_handler_.generate_local_error( "failed to delete " + name ) } };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
+                std::cout << remote_request << std::endl;
+                OutboundMessage response = { plaintext, { {}, remote_request } };
+                std::cout << id << std::endl;
+                connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
+                break;
               }
-              break;
-            }
 
-            case 7: {
-              auto result = message_handler_.parse_local_remote_lookup( message );
-              std::string name = std::get<0>( result );
-              int id = std::get<1>( result );
-              int tag = tag_generator_.emit();
-              std::string remote_request = message_handler_.generate_remote_delete( tag, name );
-              outstanding_remote_requests_.insert( { tag, &*client_it } );
-              client_it->ordered_tags.push( tag );
+              case 6: {
+                std::string name = message_handler_.parse_local_lookup( message );
+                int result = my_storage_.delete_object( name );
+                if ( result == 0 ) {
+                  OutboundMessage response
+                    = { plaintext, { {}, message_handler_.generate_local_success( "deleted " + name ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                } else {
+                  OutboundMessage response
+                    = { plaintext, { {}, message_handler_.generate_local_error( "failed to delete " + name ) } };
+                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                }
+                break;
+              }
 
-              OutboundMessage response = { plaintext, { {}, remote_request } };
-              std::cout << id << std::endl;
-              connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
-              break;
-            }
+              case 7: {
+                auto result = message_handler_.parse_local_remote_lookup( message );
+                std::string name = std::get<0>( result );
+                int id = std::get<1>( result );
+                int tag = tag_generator_.emit();
+                std::string remote_request = message_handler_.generate_remote_delete( tag, name );
+                outstanding_remote_requests_.insert( { tag, &*client_it } );
+                client_it->ordered_tags.push( tag );
 
-            default: {
-              OutboundMessage response
-                = { plaintext, { {}, message_handler_.generate_local_error( "unidentified opcode" ) } };
-              client_it->outbound_messages_.emplace_back( std::move( response ) );
-              break;
+                OutboundMessage response = { plaintext, { {}, remote_request } };
+                std::cout << id << std::endl;
+                connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
+                break;
+              }
+
+              default: {
+                OutboundMessage response
+                  = { plaintext, { {}, message_handler_.generate_local_error( "unidentified opcode" ) } };
+                client_it->outbound_messages_.emplace_back( std::move( response ) );
+                break;
+              }
             }
           }
         },
@@ -435,7 +439,7 @@ int main( int argc, char* argv[] )
   std::cout << argc << argv[0] << std::endl;
 
   EventLoop loop;
-  StorageServer echo( 200 );
+  StorageServer echo( 2'000'000 );
   echo.install_rules( loop );
   // std::map<size_t, std::string> input {{0,argv[1]}};
   // echo.connect(input, loop);
@@ -445,6 +449,8 @@ int main( int argc, char* argv[] )
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
     ;
+
+  std::cout << loop.summary() << std::endl;
 
   return EXIT_SUCCESS;
 }

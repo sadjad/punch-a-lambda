@@ -56,9 +56,9 @@ struct ClientHandler
     temp_inbound_message_.append( read_buffer_.readable_region() );
     read_buffer_.pop( read_buffer_.readable_region().length() );
     if ( receive_state == 0 ) {
-      if ( temp_inbound_message_.length() > 4 ) {
+      if ( temp_inbound_message_.length() >= 4 ) {
         expected_length = *reinterpret_cast<const int*>( temp_inbound_message_.c_str() );
-        std::cout << expected_length << std::endl;
+        std::cout << "parse expected length" << expected_length << std::endl;
         if ( temp_inbound_message_.length() > expected_length - 1 ) {
           inbound_messages_.emplace_back( move( temp_inbound_message_.substr( 4, expected_length - 4 ) ) );
           temp_inbound_message_ = temp_inbound_message_.substr( expected_length );
@@ -104,7 +104,7 @@ struct ClientHandler
 
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
-      //std::cout << "producing ptr " << a << std::endl;
+      std::cout << "producing ptr " << a << std::endl;
       const size_t bytes_wrote = send_buffer_.write( a );
       if ( bytes_wrote == a.length() ) {
         outbound_messages_.pop_front();
@@ -132,12 +132,23 @@ struct ClientHandler
 
     things_to_kill.push_back( loop.add_rule(
       "receive messages",
-      [&] { while(temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty()) {parse();} },
-      [&] { return temp_inbound_message_.length() > 0 or not read_buffer_.readable_region().empty(); } ) );
+      [&] {
+        while ( temp_inbound_message_.length() >= expected_length or not read_buffer_.readable_region().empty() ) {
+          parse();
+        }
+      },
+      [&] {
+        std::cout << "read buffer: (" << expected_length << ")" << std::endl;
+        return temp_inbound_message_.length() >= expected_length or not read_buffer_.readable_region().empty();
+      } ) );
 
     things_to_kill.push_back( loop.add_rule(
       "write responses",
-      [&] { while(outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty()) {produce();} },
+      [&] {
+        while ( outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty() ) {
+          produce();
+        }
+      },
       [&] { return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty(); } ) );
   }
 
