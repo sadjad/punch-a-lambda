@@ -89,7 +89,7 @@ struct ClientHandler
 
   void produce()
   {
-    auto message = outbound_messages_.front();
+    auto& message = outbound_messages_.front();
     std::cout << message.message.plain << std::endl;
     if ( message.message_type_ == plaintext ) {
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );

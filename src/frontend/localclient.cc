@@ -47,6 +47,9 @@ int main( int argc, char* argv[] )
 
   int it = 1000;
 
+  objects.reserve( it );
+  names.reserve( it );
+
   for ( int i = 0; i < it; i++ ) {
     objects.emplace_back( "object" + to_string( i ) );
     names.emplace_back( "name" + to_string( i + 1 ) );
@@ -55,7 +58,7 @@ int main( int argc, char* argv[] )
   for ( int i = 0; i < it; i++ ) {
     OutboundMessage request1_header
       = { plaintext, { {}, message_handler_.generate_local_object_header( names[i], objects[i].size() ) } };
-    OutboundMessage request1 = { pointer, { { objects[i].c_str(), objects[i].size() }, {} } };
+    OutboundMessage request1 = { pointer, { { objects[i].data(), objects[i].size() }, {} } };
 
     new_client.outbound_messages_.push_back( request1_header );
     new_client.outbound_messages_.push_back( request1 );
