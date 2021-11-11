@@ -13,6 +13,7 @@
 #include "storage/clienthandler.hh"
 #include "storage/message.hh"
 
+
 class StorageServer
 {
 private:
@@ -98,7 +99,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
     conn_it->second.install_rules( event_loop, [&, conn_it] {
-      std::cout << "died" << std::endl;
+      ERROR("died");
       conn_it->second.socket_.close();
       connections_.erase( conn_it );
     } );
@@ -109,7 +110,8 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
         while ( not conn_it->second.inbound_messages_.empty() ) {
           std::string msg = conn_it->second.inbound_messages_.front();
           conn_it->second.inbound_messages_.pop_front();
-          std::cout << "message received " << msg << std::endl;
+          
+          ERROR("message received");
 
           int opcode = stoi( msg.substr( 0, 1 ) );
           switch ( opcode ) {
@@ -122,12 +124,12 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
               auto result = message_handler_.parse_remote_lookup( msg );
               std::string name = std::get<0>( result );
               int tag = std::get<1>( result );
-              std::cout << "looking up:" << name << ";" << std::endl;
+              ERROR("looking up:" + name + ";");
               auto a = my_storage_.locate( name );
 
               if ( a.has_value() ) {
 
-                std::cout << "found object" << std::endl;
+                ERROR("found object");
 
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
                 std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
@@ -137,7 +139,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               } else {
 
-                std::cout << "did not find object" << std::endl;
+                ERROR("did not find object");
 
                 std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
                 OutboundMessage response = { plaintext, { {}, std::move( message ) } };
@@ -198,7 +200,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
               auto result = message_handler_.parse_remote_lookup( msg );
               std::string name = std::get<0>( result );
               int tag = std::get<1>( result );
-              std::cout << "looking up:" << name << ";" << std::endl;
+              ERROR("looking up:" + name +  ";");
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
                 OutboundMessage response
@@ -265,7 +267,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
           while ( not client_it->inbound_messages_.empty() ) {
             std::string message = client_it->inbound_messages_.front();
             client_it->inbound_messages_.pop_front();
-            std::cout << "message recevid " << message << std::endl;
+            ERROR("message received " + message);
 
             int opcode = stoi( message.substr( 0, 1 ) );
             switch ( opcode ) {
@@ -275,9 +277,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
               case 0: {
                 int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
-                std::cout << "size " << size << ";" << std::endl;
                 std::string name = message.substr( 5 );
-                std::cout << "storing:" << name << ";" << std::endl;
+                ERROR("storing:" + name + ";");
                 auto a = my_storage_.new_object( name, size );
                 if ( a.has_value() ) {
                   std::stringstream result;
@@ -296,19 +297,16 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
               case 1: {
                 std::string name = message_handler_.parse_local_lookup( message );
-                // std::cout << "looking up:" << name << ";" << std::endl;
+                ERROR( "looking up:" + name + ";");
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
-                  // std::cout << "a has value" << std::endl;
                   OutboundMessage response_header
                     = { plaintext, { {}, message_handler_.generate_local_object_header( name, a.value().size ) } };
                   std::string_view bump( reinterpret_cast<const char*>( a.value().ptr ), a.value().size );
-                  // std::cout << "looked up " << bump << std::endl;
                   OutboundMessage response = { pointer, { { a.value().ptr, a.value().size }, {} } };
                   client_it->outbound_messages_.emplace_back( std::move( response_header ) );
                   client_it->outbound_messages_.emplace_back( std::move( response ) );
                 } else {
-                  std::cout << "a missing" << std::endl;
                   OutboundMessage response
                     = { plaintext, { {}, message_handler_.generate_local_error( "can't find object" ) } };
                   client_it->outbound_messages_.emplace_back( std::move( response ) );
@@ -320,7 +318,6 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
               case 2: {
                 int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
-                std::cout << "size " << size << ";" << std::endl;
                 std::string name = message.substr( 5, size );
                 auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
                 if ( success == 0 ) {
@@ -350,9 +347,8 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
-                std::cout << remote_request << std::endl;
+                ERROR( remote_request + " to " + std::to_string(id));
                 OutboundMessage response = { plaintext, { {}, remote_request } };
-                std::cout << id << std::endl;
                 connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
                 break;
               }

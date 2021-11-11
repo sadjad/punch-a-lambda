@@ -7,6 +7,12 @@
 #include "util/split.hh"
 #include "util/timerfd.hh"
 
+#if DEBUG
+#define ERROR(x) std::cout << __LINE__ << " " << x << std::endl;
+#else
+#define ERROR(x) 
+#endif 
+
 enum MessageType
 {
   pointer,
@@ -58,7 +64,7 @@ struct ClientHandler
     if ( receive_state == 0 ) {
       if ( temp_inbound_message_.length() >= 4 ) {
         expected_length = *reinterpret_cast<const int*>( temp_inbound_message_.c_str() );
-        std::cout << "parse expected length" << expected_length << std::endl;
+        ERROR( "parse expected length" + std::to_string( expected_length) );
         if ( temp_inbound_message_.length() > expected_length - 1 ) {
           inbound_messages_.emplace_back( move( temp_inbound_message_.substr( 4, expected_length - 4 ) ) );
           temp_inbound_message_ = temp_inbound_message_.substr( expected_length );
@@ -90,7 +96,7 @@ struct ClientHandler
   void produce()
   {
     auto& message = outbound_messages_.front();
-    std::cout << message.message.plain << std::endl;
+    ERROR( message.message.plain );
     if ( message.message_type_ == plaintext ) {
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );
       if ( bytes_wrote == message.message.plain.length() ) {
@@ -104,7 +110,7 @@ struct ClientHandler
 
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
-      std::cout << "producing ptr " << a << std::endl;
+      ERROR(a);
       const size_t bytes_wrote = send_buffer_.write( a );
       if ( bytes_wrote == a.length() ) {
         outbound_messages_.pop_front();
@@ -138,7 +144,6 @@ struct ClientHandler
         }
       },
       [&] {
-        std::cout << "read buffer: (" << expected_length << ")" << std::endl;
         return temp_inbound_message_.length() >= expected_length or not read_buffer_.readable_region().empty();
       } ) );
 

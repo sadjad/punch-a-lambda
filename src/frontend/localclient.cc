@@ -68,6 +68,11 @@ int main( int argc, char* argv[] )
     new_client.outbound_messages_.push_back( request2 );
   }
 
+  for (int i = 0; i < it; i ++) {
+    OutboundMessage request = {plaintext, {{}, message_handler_.generate_local_delete(names[i])}};
+    new_client.outbound_messages_.push_back(request);
+  }
+
   loop.add_rule(
     "print inbound messages",
     [&] {

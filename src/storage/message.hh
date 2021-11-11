@@ -208,4 +208,23 @@ public:
     request.set_field( msg::MessageField::Name, move( name ) );
     return request.to_string();
   };
+
+  std::string generate_local_delete( std::string name )
+  {
+    msg::Message request { msg::OpCode::LocalDelete };
+    request.set_field( msg::MessageField::Name, move( name ) );
+    return request.to_string();
+  };
+
+
+  // std::string generate_local_remote_lookup(std:: string name, int id)
+  // {
+  //   msg::Message request {msg::OpCode::LocalRemoteLookup};
+  //   request.set_field()
+
+
+  // }
+
+
+
 };
