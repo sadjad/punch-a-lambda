@@ -17,6 +17,7 @@ class StorageServer
 {
 private:
   LocalStorage my_storage_;
+  uint16_t port_;
   std::vector<EventLoop::RuleHandle> rules_ {};
   TCPSocket ready_socket_ {};
   TCPSocket listener_socket_ {};
@@ -36,14 +37,15 @@ public:
                        uint32_t block_dim,
                        EventLoop& event_loop );
   void connect( std::map<size_t, std::string>& ips, EventLoop& event_loop );
-  void set_up_local();
+  void setup_ready_socket( EventLoop& event_loop );
   void install_rules( EventLoop& event_loop );
 };
 
 StorageServer::StorageServer( size_t size, const uint16_t port )
   : my_storage_( size )
-  , rules_ {}
-  , listener_socket_( [&] {
+  , port_( port )
+  , rules_()
+  , listener_socket_( [port] {
     TCPSocket listener_socket;
     listener_socket.set_blocking( false );
     listener_socket.set_reuseaddr();
@@ -64,18 +66,25 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   std::map<size_t, std::string> peer_addresses
     = get_peer_addresses( thread_id, coordinator_ip, coordinator_port, block_dim, fout );
   this->connect( peer_addresses, event_loop );
-  ready_socket_.set_blocking( false );
-  ready_socket_.set_reuseaddr();
-  ready_socket_.bind( { "127.0.0.1", 8079 } );
-  ready_socket_.listen();
 }
 
-void StorageServer::set_up_local()
+void StorageServer::setup_ready_socket( EventLoop& event_loop )
 {
   ready_socket_.set_blocking( false );
   ready_socket_.set_reuseaddr();
-  ready_socket_.bind( { "127.0.0.1", 8079 } );
+  ready_socket_.bind( { "127.0.0.1", static_cast<uint16_t>( port_ - 1 ) } );
   ready_socket_.listen();
+
+  event_loop.add_rule(
+    "ready_socket",
+    Direction::In,
+    ready_socket_,
+    [&] {
+      auto socket = ready_socket_.accept();
+      socket.set_blocking( true );
+      socket.write_all( "ready" );
+    },
+    [] { return true; } );
 }
 
 void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& event_loop )
@@ -444,6 +453,7 @@ int main( int argc, char* argv[] )
   // std::map<size_t, std::string> input {{0,argv[1]}};
   // storage_server.connect(input, loop);
   storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
+  storage_server.setup_ready_socket( loop );
   // storage_server.set_up_local();
 
   loop.set_fd_failure_callback( [] {} );
