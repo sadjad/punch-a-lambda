@@ -30,7 +30,7 @@ private:
   std::unordered_map<int, ClientHandler*> outstanding_remote_requests_ {};
 
 public:
-  StorageServer( size_t size );
+  StorageServer( size_t size, const uint16_t port );
   void connect_lambda( std::string coordinator_ip,
                        uint16_t coordinator_port,
                        uint32_t thread_id,
@@ -41,14 +41,14 @@ public:
   void install_rules( EventLoop& event_loop );
 };
 
-StorageServer::StorageServer( size_t size )
+StorageServer::StorageServer( size_t size, const uint16_t port )
   : my_storage_( size )
   , rules_ {}
   , listener_socket_( [&] {
     TCPSocket listener_socket;
     listener_socket.set_blocking( false );
     listener_socket.set_reuseaddr();
-    listener_socket.bind( { "127.0.0.1", 8080 } );
+    listener_socket.bind( { "127.0.0.1", port } );
     listener_socket.listen();
     return listener_socket;
   }() )
@@ -427,20 +427,25 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
 int main( int argc, char* argv[] )
 {
-  if ( argc != 5 ) {
-    std::cerr << "Usage: MASTER_IP MASTER_PORT THREADID BLOCKDIM " << std::endl;
+  if ( argc != 6 ) {
+    std::cerr << "Usage: MASTER_IP MASTER_PORT LISTEN_PORT THREADID BLOCKDIM " << std::endl;
     return EXIT_FAILURE;
   }
 
-  std::cout << argc << argv[0] << std::endl;
+  const std::string master_ip {argv[1]};
+  const uint16_t master_port = static_cast<uint16_t>( std::stoul(argv[2]) );
+  const uint16_t listen_port = static_cast<uint16_t>( std::stoul(argv[3]) );
+  const uint32_t thread_id = std::stoul( argv[4] );
+  const uint32_t block_dim = std::stoul( argv[5] );
 
   EventLoop loop;
-  StorageServer echo( 2'000'000 );
-  echo.install_rules( loop );
+  StorageServer storage_server( 2'000'000, listen_port );
+  storage_server.install_rules( loop );
+
   // std::map<size_t, std::string> input {{0,argv[1]}};
-  // echo.connect(input, loop);
-  // echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
-  echo.set_up_local();
+  // storage_server.connect(input, loop);
+  storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop);
+  // storage_server.set_up_local();
 
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
