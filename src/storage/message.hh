@@ -216,15 +216,10 @@ public:
     return request.to_string();
   };
 
-
   // std::string generate_local_remote_lookup(std:: string name, int id)
   // {
   //   msg::Message request {msg::OpCode::LocalRemoteLookup};
   //   request.set_field()
 
-
   // }
-
-
-
 };
