@@ -8,10 +8,10 @@
 #include "util/timerfd.hh"
 
 #if DEBUG
-#define ERROR(x) std::cout << __LINE__ << " " << x << std::endl;
+#define ERROR( x ) std::cout << ( "[" + std::to_string( __LINE__ ) + "] " + x + "\n" );
 #else
-#define ERROR(x) 
-#endif 
+#define ERROR( x )
+#endif
 
 enum MessageType
 {
@@ -64,7 +64,7 @@ struct ClientHandler
     if ( receive_state == 0 ) {
       if ( temp_inbound_message_.length() >= 4 ) {
         expected_length = *reinterpret_cast<const int*>( temp_inbound_message_.c_str() );
-        ERROR( "parse expected length" + std::to_string( expected_length) );
+        //ERROR( "parse expected length " + std::to_string( expected_length ) );
         if ( temp_inbound_message_.length() > expected_length - 1 ) {
           inbound_messages_.emplace_back( move( temp_inbound_message_.substr( 4, expected_length - 4 ) ) );
           temp_inbound_message_ = temp_inbound_message_.substr( expected_length );
@@ -96,8 +96,8 @@ struct ClientHandler
   void produce()
   {
     auto& message = outbound_messages_.front();
-    ERROR( message.message.plain );
     if ( message.message_type_ == plaintext ) {
+      //ERROR( "producing plaintext" );
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );
       if ( bytes_wrote == message.message.plain.length() ) {
         outbound_messages_.pop_front();
@@ -110,7 +110,7 @@ struct ClientHandler
 
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
-      ERROR(a);
+      //ERROR( "producing ptr" );
       const size_t bytes_wrote = send_buffer_.write( a );
       if ( bytes_wrote == a.length() ) {
         outbound_messages_.pop_front();

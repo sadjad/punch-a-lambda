@@ -82,7 +82,8 @@ void StorageServer::setup_ready_socket( EventLoop& event_loop )
     [&] {
       auto socket = ready_socket_.accept();
       socket.set_blocking( true );
-      socket.write_all( "ready" );
+      socket.write( "1" );
+      socket.close();
     },
     [] { return true; } );
 }
@@ -275,9 +276,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
           while ( not client_it->inbound_messages_.empty() ) {
             std::string message = client_it->inbound_messages_.front();
             client_it->inbound_messages_.pop_front();
-            ERROR( "message received " + message );
-
             int opcode = stoi( message.substr( 0, 1 ) );
+            ERROR( "message received: opcode=" + std::to_string( opcode ) );
+
             switch ( opcode ) {
 
                 // new object creation in localstorage, returns the pointer value as a string
@@ -328,6 +329,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
                 std::string name = message.substr( 5, size );
                 auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
+                ERROR( "storing:" + name + ";" )
                 if ( success == 0 ) {
                   OutboundMessage response
                     = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
@@ -355,7 +357,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
-                ERROR( remote_request + " to " + std::to_string( id ) );
+                ERROR( "remote_request " + name + " to " + std::to_string( id ) );
                 OutboundMessage response = { plaintext, { {}, remote_request } };
                 connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
                 break;
