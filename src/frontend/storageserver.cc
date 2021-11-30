@@ -94,21 +94,19 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     int id = it.first;
     std::string ip = it.second;
 
+    TCPSocket socket_send;
     Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
-    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
+    socket_send.set_reuseaddr();
+    socket_send.set_blocking( false );
+    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+    socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
-    TCPSocket socket_send;
-
+    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
     socket_recv.set_reuseaddr();
-    socket_send.set_reuseaddr();
-
-    socket_recv.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
-    socket_send.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
-
-    // socket.set_blocking( false );
-    socket_recv.connect( address_recv );
-    socket_send.connect( address_send );
+    socket_recv.set_blocking( false );
+    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
+    socket_recv.connect( address_send );
 
     auto r = connections_.emplace( std::piecewise_construct,
                                    std::forward_as_tuple( id ),
@@ -278,8 +276,6 @@ void StorageServer::install_rules( EventLoop& event_loop )
     Direction::In,
     listener_socket_,
     [&] {
-      auto client_socket = listener_socket_.accept();
-      auto client_socket_copy = client_socket.duplicate();
       clients_.emplace_back( listener_socket_.accept() );
       auto client_it = prev( clients_.end() );
 
