@@ -68,8 +68,6 @@ size_t get_field_count( const OpCode opcode )
     case OpCode::LocalSuccess:
     case OpCode::LocalError:
       return 1;
-    case OpCode::LocalRemoteDelete:
-    case OpCode::LocalRemoteLookup:
     case OpCode::RemoteStore:
     case OpCode::LocalStore:
     case OpCode::LocalRemoteLookup:
