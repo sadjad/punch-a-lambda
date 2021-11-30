@@ -103,8 +103,8 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     socket_recv.set_reuseaddr();
     socket_send.set_reuseaddr();
 
-    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
-    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+    socket_recv.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+    socket_send.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
 
     // socket.set_blocking( false );
     socket_recv.connect( address_recv );
