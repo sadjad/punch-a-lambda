@@ -36,8 +36,10 @@ static std::map<std::pair<OpCode, MessageField>, size_t> field_indices = {
   { { OpCode::RemoteSuccess, MessageField::Message }, 0 },   { { OpCode::RemoteError, MessageField::Message }, 0 },
   { { OpCode::LocalLookup, MessageField::Name }, 0 },        { { OpCode::LocalStore, MessageField::Name }, 0 },
   { { OpCode::LocalStore, MessageField::Object }, 1 },       { { OpCode::LocalDelete, MessageField::Name }, 0 },
-  { { OpCode::LocalRemoteLookup, MessageField::Name }, 0 },  { { OpCode::LocalRemoteStore, MessageField::Name }, 0 },
-  { { OpCode::LocalRemoteStore, MessageField::Object }, 1 }, { { OpCode::LocalRemoteDelete, MessageField::Name }, 0 },
+  { { OpCode::LocalRemoteLookup, MessageField::Name }, 0 },  {{ OpCode::LocalRemoteLookup, MessageField::RemoteNode}, 1},
+  { { OpCode::LocalRemoteStore, MessageField::Name }, 0 },  { {OpCode::LocalRemoteStore, MessageField::Object }, 1 }, 
+  { { OpCode::LocalRemoteStore, MessageField::RemoteNode }, 2 }, { { OpCode::LocalRemoteDelete, MessageField::Name }, 0 },
+  { { OpCode::LocalRemoteDelete, MessageField::RemoteNode }, 1},
   { { OpCode::LocalSuccess, MessageField::Message }, 0 },    { { OpCode::LocalError, MessageField::Message }, 0 }
 };
 
@@ -55,17 +57,16 @@ size_t get_field_count( const OpCode opcode )
     case OpCode::RemoteError:
     case OpCode::LocalLookup:
     case OpCode::LocalDelete:
-    case OpCode::LocalRemoteLookup:
-    case OpCode::LocalRemoteDelete:
     case OpCode::LocalSuccess:
     case OpCode::LocalError:
       return 1;
-
+    case OpCode::LocalRemoteDelete:
+    case OpCode::LocalRemoteLookup:
     case OpCode::RemoteStore:
     case OpCode::LocalStore:
-    case OpCode::LocalRemoteStore:
       return 2;
-
+    case OpCode::LocalRemoteStore:
+      return 3;
     default:
       throw std::runtime_error( "invalid opcode" );
   }
@@ -170,6 +171,7 @@ std::string Message::to_string()
       index += sizeof( uint32_t );
     }
     std::memcpy( &result[index], fields_[i].data(), fields_[i].length() );
+    index += fields_[i].length();
   }
 
   return result;

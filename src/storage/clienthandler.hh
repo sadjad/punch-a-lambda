@@ -7,6 +7,7 @@
 #include "util/split.hh"
 #include "util/timerfd.hh"
 
+#define DEBUG 0
 #if DEBUG
 #define ERROR(x) std::cout << __LINE__ << " " << x << std::endl;
 #else

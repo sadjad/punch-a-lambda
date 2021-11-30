@@ -353,6 +353,10 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 break;
               }
 
+              case 4: {
+                break;
+              }
+
               case 6: {
                 std::string name = message_handler_.parse_local_lookup( message );
                 int result = my_storage_.delete_object( name );
@@ -397,12 +401,15 @@ void StorageServer::install_rules( EventLoop& event_loop )
       rules_to_delete.push_back( event_loop.add_rule(
         "buffer to responses",
         [&, client_it] {
+          while( not client_it->ordered_tags.empty()
+                 && client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
+                      != client_it->buffered_remote_responses_.end()){
           for ( auto it : client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )->second ) {
             client_it->outbound_messages_.emplace_back(
               it ); // better call the copy constructor here, we will remove the thing later.
           }
           client_it->buffered_remote_responses_.erase( client_it->ordered_tags.front() );
-          client_it->ordered_tags.pop();
+          client_it->ordered_tags.pop();}
         },
         [&, client_it] {
           return not client_it->ordered_tags.empty()
@@ -439,8 +446,8 @@ int main( int argc, char* argv[] )
   echo.install_rules( loop );
   // std::map<size_t, std::string> input {{0,argv[1]}};
   // echo.connect(input, loop);
-  // echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
-  echo.set_up_local();
+  echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
+  //echo.set_up_local();
 
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )

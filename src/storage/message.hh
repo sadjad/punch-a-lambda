@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <cstring>
 
 #include "util/util.hh"
 
@@ -189,6 +190,7 @@ public:
   {
     msg::Message request { msg::MessageType::Local, message };
     const auto name = request.get_field( msg::MessageField::Name );
+    // RemoteNode field must have only 4 bytes
     const auto id = *reinterpret_cast<const int*>( request.get_field( msg::MessageField::RemoteNode ).c_str() );
 
     return { name, id };
@@ -216,15 +218,17 @@ public:
     return request.to_string();
   };
 
+  std::string generate_local_remote_lookup(std:: string name, int id)
+  {
+    msg::Message request {msg::OpCode::LocalRemoteLookup};
+    request.set_field( msg::MessageField::Name , move(name ));
+    std::string remote_node  = "0000";
+    std::memcpy(remote_node.data(), &id, 4);
+    request.set_field( msg::MessageField::RemoteNode, move(remote_node));
 
-  // std::string generate_local_remote_lookup(std:: string name, int id)
-  // {
-  //   msg::Message request {msg::OpCode::LocalRemoteLookup};
-  //   request.set_field()
+    std::cout << request.to_string() << std::endl;
+    return request.to_string();
 
-
-  // }
-
-
+  }
 
 };
