@@ -36,7 +36,7 @@ public:
                        uint32_t thread_id,
                        uint32_t block_dim,
                        EventLoop& event_loop );
-  void connect( std::map<size_t, std::string>& ips, EventLoop& event_loop );
+  void connect( const uint32_t my_id, std::map<size_t, std::string>& ips, EventLoop& event_loop );
   void setup_ready_socket( EventLoop& event_loop );
   void install_rules( EventLoop& event_loop );
 };
@@ -65,7 +65,7 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   std::ofstream fout { "/tmp/out" };
   std::map<size_t, std::string> peer_addresses
     = get_peer_addresses( thread_id, coordinator_ip, coordinator_port, block_dim, fout );
-  this->connect( peer_addresses, event_loop );
+  this->connect( thread_id, peer_addresses, event_loop );
 }
 
 void StorageServer::setup_ready_socket( EventLoop& event_loop )
@@ -88,15 +88,15 @@ void StorageServer::setup_ready_socket( EventLoop& event_loop )
     [] { return true; } );
 }
 
-void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& event_loop )
+void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>& ips, EventLoop& event_loop )
 {
   for ( auto& it : ips ) {
     int id = it.first;
     std::string ip = it.second;
-    Address address { ip, static_cast<uint16_t>( 8000 ) };
+    Address address { ip, static_cast<uint16_t>( 8000 + id ) };
     TCPSocket socket;
     socket.set_reuseaddr();
-    socket.bind( { "0", static_cast<uint16_t>( 8000 ) } );
+    socket.bind( { "0", static_cast<uint16_t>( 8000 + my_id ) } );
     // socket.set_blocking( false );
     socket.connect( address );
     auto r = connections_.emplace( id, std::move( socket ) );
