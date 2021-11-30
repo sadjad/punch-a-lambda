@@ -1,3 +1,6 @@
+#pragma once
+
+#include <optional>
 #include <queue>
 
 #include "net/socket.hh"
@@ -7,12 +10,12 @@
 #include "util/split.hh"
 #include "util/timerfd.hh"
 
-#define DEBUG 0
+#define DEBUG 1
 #if DEBUG
-#define ERROR(x) std::cout << __LINE__ << " " << x << std::endl;
+#define ERROR( x ) std::cout << ( "[" + std::to_string( __LINE__ ) + "] " + x + "\n" );
 #else
-#define ERROR(x) 
-#endif 
+#define ERROR( x )
+#endif
 
 enum MessageType
 {
@@ -34,7 +37,9 @@ struct OutboundMessage
 
 struct ClientHandler
 {
-  TCPSocket socket_ {};
+  TCPSocket socket_recv_ {};
+  std::optional<TCPSocket> socket_send_ { std::nullopt };
+
   RingBuffer send_buffer_ { 4096 };
   RingBuffer read_buffer_ { 4096 };
 
@@ -55,7 +60,12 @@ struct ClientHandler
   // check test.py to see python reference FSM for receiving
 
   ClientHandler( TCPSocket&& socket )
-    : socket_( std::move( socket ) )
+    : socket_recv_( std::move( socket ) )
+  {}
+
+  ClientHandler( TCPSocket&& socket_recv, TCPSocket&& socket_send )
+    : socket_recv_( std::move( socket_recv ) )
+    , socket_send_( std::move( socket_send ) )
   {}
 
   void parse()
@@ -65,7 +75,7 @@ struct ClientHandler
     if ( receive_state == 0 ) {
       if ( temp_inbound_message_.length() >= 4 ) {
         expected_length = *reinterpret_cast<const int*>( temp_inbound_message_.c_str() );
-        ERROR( "parse expected length" + std::to_string( expected_length) );
+        // ERROR( "parse expected length " + std::to_string( expected_length ) );
         if ( temp_inbound_message_.length() > expected_length - 1 ) {
           inbound_messages_.emplace_back( move( temp_inbound_message_.substr( 4, expected_length - 4 ) ) );
           temp_inbound_message_ = temp_inbound_message_.substr( expected_length );
@@ -97,8 +107,8 @@ struct ClientHandler
   void produce()
   {
     auto& message = outbound_messages_.front();
-    ERROR( message.message.plain );
     if ( message.message_type_ == plaintext ) {
+      // ERROR( "producing plaintext" );
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );
       if ( bytes_wrote == message.message.plain.length() ) {
         outbound_messages_.pop_front();
@@ -111,7 +121,7 @@ struct ClientHandler
 
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
-      ERROR(a);
+      // ERROR( "producing ptr" );
       const size_t bytes_wrote = send_buffer_.write( a );
       if ( bytes_wrote == a.length() ) {
         outbound_messages_.pop_front();
@@ -125,17 +135,41 @@ struct ClientHandler
 
   void install_rules( EventLoop& loop, std::function<void( void )>&& close_callback )
   {
-    things_to_kill.push_back( loop.add_rule(
-      "http",
-      socket_,
-      [&] { read_buffer_.read_from( socket_ ); },
-      [&] { return not read_buffer_.writable_region().empty(); },
-      [&] { send_buffer_.write_to( socket_ ); },
-      [&] { return not send_buffer_.readable_region().empty(); },
-      [&, f = move( close_callback )] {
-        std::cout << "client died" << std::endl;
-        f();
-      } ) );
+    if ( socket_send_.has_value() ) {
+      things_to_kill.push_back( loop.add_rule(
+        "recv",
+        Direction::In,
+        socket_recv_,
+        [&] { read_buffer_.read_from( socket_recv_ ); },
+        [&] { return not read_buffer_.writable_region().empty(); },
+        [&, f = close_callback] {
+          std::cout << "client died (recv socket)" << std::endl;
+          f();
+        } ) );
+
+      things_to_kill.push_back( loop.add_rule(
+        "send",
+        Direction::Out,
+        *socket_send_,
+        [&] { send_buffer_.write_to( *socket_send_ ); },
+        [&] { return not send_buffer_.readable_region().empty(); },
+        [&, f = close_callback] {
+          std::cout << "client died (send socket)" << std::endl;
+          f();
+        } ) );
+    } else {
+      things_to_kill.push_back( loop.add_rule(
+        "send/recv",
+        socket_recv_,
+        [&] { read_buffer_.read_from( socket_recv_ ); },
+        [&] { return not read_buffer_.writable_region().empty(); },
+        [&] { send_buffer_.write_to( socket_recv_ ); },
+        [&] { return not send_buffer_.readable_region().empty(); },
+        [&, f = close_callback] {
+          std::cout << "client died (send socket)" << std::endl;
+          f();
+        } ) );
+    }
 
     things_to_kill.push_back( loop.add_rule(
       "receive messages",

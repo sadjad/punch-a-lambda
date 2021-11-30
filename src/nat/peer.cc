@@ -15,7 +15,7 @@ map<size_t, string> get_peer_addresses( const uint32_t thread_id,
 {
   map<size_t, string> peers;
 
-  string msg = "my name is:" + to_string( thread_id );
+  string msg = "name:" + to_string( thread_id );
 
   // Discover my public ip address
   TCPSocket master_socket {};

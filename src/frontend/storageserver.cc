@@ -13,11 +13,11 @@
 #include "storage/clienthandler.hh"
 #include "storage/message.hh"
 
-
 class StorageServer
 {
 private:
   LocalStorage my_storage_;
+  uint16_t port_;
   std::vector<EventLoop::RuleHandle> rules_ {};
   TCPSocket ready_socket_ {};
   TCPSocket listener_socket_ {};
@@ -30,25 +30,26 @@ private:
   std::unordered_map<int, ClientHandler*> outstanding_remote_requests_ {};
 
 public:
-  StorageServer( size_t size );
+  StorageServer( size_t size, const uint16_t port );
   void connect_lambda( std::string coordinator_ip,
                        uint16_t coordinator_port,
                        uint32_t thread_id,
                        uint32_t block_dim,
                        EventLoop& event_loop );
-  void connect( std::map<size_t, std::string>& ips, EventLoop& event_loop );
-  void set_up_local();
+  void connect( const uint32_t my_id, std::map<size_t, std::string>& ips, EventLoop& event_loop );
+  void setup_ready_socket( EventLoop& event_loop );
   void install_rules( EventLoop& event_loop );
 };
 
-StorageServer::StorageServer( size_t size )
+StorageServer::StorageServer( size_t size, const uint16_t port )
   : my_storage_( size )
-  , rules_ {}
-  , listener_socket_( [&] {
+  , port_( port )
+  , rules_()
+  , listener_socket_( [port] {
     TCPSocket listener_socket;
     listener_socket.set_blocking( false );
     listener_socket.set_reuseaddr();
-    listener_socket.bind( { "127.0.0.1", 8080 } );
+    listener_socket.bind( { "127.0.0.1", port } );
     listener_socket.listen();
     return listener_socket;
   }() )
@@ -64,33 +65,54 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   std::ofstream fout { "/tmp/out" };
   std::map<size_t, std::string> peer_addresses
     = get_peer_addresses( thread_id, coordinator_ip, coordinator_port, block_dim, fout );
-  this->connect( peer_addresses, event_loop );
-  ready_socket_.set_blocking( false );
-  ready_socket_.set_reuseaddr();
-  ready_socket_.bind( { "127.0.0.1", 8079 } );
-  ready_socket_.listen();
+  this->connect( thread_id, peer_addresses, event_loop );
 }
 
-void StorageServer::set_up_local()
+void StorageServer::setup_ready_socket( EventLoop& event_loop )
 {
   ready_socket_.set_blocking( false );
   ready_socket_.set_reuseaddr();
-  ready_socket_.bind( { "127.0.0.1", 8079 } );
+  ready_socket_.bind( { "127.0.0.1", static_cast<uint16_t>( port_ - 1 ) } );
   ready_socket_.listen();
+
+  event_loop.add_rule(
+    "ready_socket",
+    Direction::In,
+    ready_socket_,
+    [&] {
+      auto socket = ready_socket_.accept();
+      socket.set_blocking( true );
+      socket.write( "1" );
+      socket.close();
+    },
+    [] { return true; } );
 }
 
-void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& event_loop )
+void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>& ips, EventLoop& event_loop )
 {
   for ( auto& it : ips ) {
     int id = it.first;
     std::string ip = it.second;
-    Address address { ip, static_cast<uint16_t>( 8000 ) };
-    TCPSocket socket;
-    socket.set_reuseaddr();
-    socket.bind( { "0", static_cast<uint16_t>( 8000 ) } );
+
+    Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
+    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
+
+    TCPSocket socket_recv;
+    TCPSocket socket_send;
+
+    socket_recv.set_reuseaddr();
+    socket_send.set_reuseaddr();
+
+    socket_recv.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+    socket_send.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
+
     // socket.set_blocking( false );
-    socket.connect( address );
-    auto r = connections_.emplace( id, std::move( socket ) );
+    socket_recv.connect( address_recv );
+    socket_send.connect( address_send );
+
+    auto r = connections_.emplace( std::piecewise_construct,
+                                   std::forward_as_tuple( id ),
+                                   std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
     if ( !r.second ) {
       assert( false );
     }
@@ -99,8 +121,11 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
     conn_it->second.install_rules( event_loop, [&, conn_it] {
-      ERROR("died");
-      conn_it->second.socket_.close();
+      ERROR( "died" );
+      conn_it->second.socket_recv_.close();
+      if ( conn_it->second.socket_send_.has_value() ) {
+        conn_it->second.socket_send_->close();
+      }
       connections_.erase( conn_it );
     } );
 
@@ -110,8 +135,8 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
         while ( not conn_it->second.inbound_messages_.empty() ) {
           std::string msg = conn_it->second.inbound_messages_.front();
           conn_it->second.inbound_messages_.pop_front();
-          
-          ERROR("message received");
+
+          ERROR( "message received" );
 
           int opcode = stoi( msg.substr( 0, 1 ) );
           switch ( opcode ) {
@@ -124,12 +149,12 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
               auto result = message_handler_.parse_remote_lookup( msg );
               std::string name = std::get<0>( result );
               int tag = std::get<1>( result );
-              ERROR("looking up:" + name + ";");
+              ERROR( "looking up:" + name + ";" );
               auto a = my_storage_.locate( name );
 
               if ( a.has_value() ) {
 
-                ERROR("found object");
+                ERROR( "found object" );
 
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
                 std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
@@ -139,7 +164,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               } else {
 
-                ERROR("did not find object");
+                ERROR( "did not find object" );
 
                 std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
                 OutboundMessage response = { plaintext, { {}, std::move( message ) } };
@@ -200,7 +225,7 @@ void StorageServer::connect( std::map<size_t, std::string>& ips, EventLoop& even
               auto result = message_handler_.parse_remote_lookup( msg );
               std::string name = std::get<0>( result );
               int tag = std::get<1>( result );
-              ERROR("looking up:" + name +  ";");
+              ERROR( "looking up:" + name + ";" );
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
                 OutboundMessage response
@@ -253,10 +278,12 @@ void StorageServer::install_rules( EventLoop& event_loop )
     Direction::In,
     listener_socket_,
     [&] {
+      auto client_socket = listener_socket_.accept();
+      auto client_socket_copy = client_socket.duplicate();
       clients_.emplace_back( listener_socket_.accept() );
       auto client_it = prev( clients_.end() );
 
-      client_it->socket_.set_blocking( false );
+      client_it->socket_recv_.set_blocking( false );
       std::cout << "accepted connection" << std::endl;
 
       std::vector<EventLoop::RuleHandle> rules_to_delete;
@@ -267,9 +294,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
           while ( not client_it->inbound_messages_.empty() ) {
             std::string message = client_it->inbound_messages_.front();
             client_it->inbound_messages_.pop_front();
-            ERROR("message received " + message);
-
             int opcode = stoi( message.substr( 0, 1 ) );
+            ERROR( "message received: opcode=" + std::to_string( opcode ) );
+
             switch ( opcode ) {
 
                 // new object creation in localstorage, returns the pointer value as a string
@@ -278,7 +305,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               case 0: {
                 int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
                 std::string name = message.substr( 5 );
-                ERROR("storing:" + name + ";");
+                ERROR( "storing:" + name + ";" );
                 auto a = my_storage_.new_object( name, size );
                 if ( a.has_value() ) {
                   std::stringstream result;
@@ -297,7 +324,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
               case 1: {
                 std::string name = message_handler_.parse_local_lookup( message );
-                ERROR( "looking up:" + name + ";");
+                ERROR( "looking up:" + name + ";" );
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
                   OutboundMessage response_header
@@ -320,6 +347,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
                 std::string name = message.substr( 5, size );
                 auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
+                ERROR( "storing:" + name + ";" )
                 if ( success == 0 ) {
                   OutboundMessage response
                     = { plaintext, { {}, message_handler_.generate_local_success( "made new object with pointer" ) } };
@@ -347,7 +375,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
-                ERROR( remote_request + " to " + std::to_string(id));
+                ERROR( "remote_request " + name + " to " + std::to_string( id ) );
                 OutboundMessage response = { plaintext, { {}, remote_request } };
                 connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
                 break;
@@ -434,20 +462,26 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
 int main( int argc, char* argv[] )
 {
-  if ( argc != 5 ) {
-    std::cerr << "Usage: MASTER_IP MASTER_PORT THREADID BLOCKDIM " << std::endl;
+  if ( argc != 6 ) {
+    std::cerr << "Usage: MASTER_IP MASTER_PORT LISTEN_PORT THREADID BLOCKDIM " << std::endl;
     return EXIT_FAILURE;
   }
 
-  std::cout << argc << argv[0] << std::endl;
+  const std::string master_ip { argv[1] };
+  const uint16_t master_port = static_cast<uint16_t>( std::stoul( argv[2] ) );
+  const uint16_t listen_port = static_cast<uint16_t>( std::stoul( argv[3] ) );
+  const uint32_t thread_id = std::stoul( argv[4] );
+  const uint32_t block_dim = std::stoul( argv[5] );
 
   EventLoop loop;
-  StorageServer echo( 2'000'000 );
-  echo.install_rules( loop );
+  StorageServer storage_server( 200'000'000, listen_port );
+  storage_server.install_rules( loop );
+
   // std::map<size_t, std::string> input {{0,argv[1]}};
-  // echo.connect(input, loop);
-  echo.connect_lambda( argv[1], atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), loop );
-  //echo.set_up_local();
+  // storage_server.connect(input, loop);
+  storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
+  storage_server.setup_ready_socket( loop );
+  // storage_server.set_up_local();
 
   loop.set_fd_failure_callback( [] {} );
   while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
