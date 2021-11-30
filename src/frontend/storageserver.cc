@@ -93,13 +93,26 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
   for ( auto& it : ips ) {
     int id = it.first;
     std::string ip = it.second;
-    Address address { ip, static_cast<uint16_t>( 8000 + id ) };
-    TCPSocket socket;
-    socket.set_reuseaddr();
-    socket.bind( { "0", static_cast<uint16_t>( 8000 + my_id ) } );
+
+    Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
+    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
+
+    TCPSocket socket_recv;
+    TCPSocket socket_send;
+
+    socket_recv.set_reuseaddr();
+    socket_send.set_reuseaddr();
+
+    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
+    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+
     // socket.set_blocking( false );
-    socket.connect( address );
-    auto r = connections_.emplace( id, std::move( socket ) );
+    socket_recv.connect( address_recv );
+    socket_send.connect( address_send );
+
+    auto r = connections_.emplace( std::piecewise_construct,
+                                   std::forward_as_tuple( id ),
+                                   std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
     if ( !r.second ) {
       assert( false );
     }
@@ -109,7 +122,10 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
     conn_it->second.install_rules( event_loop, [&, conn_it] {
       ERROR( "died" );
-      conn_it->second.socket_.close();
+      conn_it->second.socket_recv_.close();
+      if ( conn_it->second.socket_send_.has_value() ) {
+        conn_it->second.socket_send_->close();
+      }
       connections_.erase( conn_it );
     } );
 
@@ -262,10 +278,12 @@ void StorageServer::install_rules( EventLoop& event_loop )
     Direction::In,
     listener_socket_,
     [&] {
+      auto client_socket = listener_socket_.accept();
+      auto client_socket_copy = client_socket.duplicate();
       clients_.emplace_back( listener_socket_.accept() );
       auto client_it = prev( clients_.end() );
 
-      client_it->socket_.set_blocking( false );
+      client_it->socket_recv_.set_blocking( false );
       std::cout << "accepted connection" << std::endl;
 
       std::vector<EventLoop::RuleHandle> rules_to_delete;
@@ -449,7 +467,7 @@ int main( int argc, char* argv[] )
   const uint32_t block_dim = std::stoul( argv[5] );
 
   EventLoop loop;
-  StorageServer storage_server( 2'000'000, listen_port );
+  StorageServer storage_server( 200'000'000, listen_port );
   storage_server.install_rules( loop );
 
   // std::map<size_t, std::string> input {{0,argv[1]}};

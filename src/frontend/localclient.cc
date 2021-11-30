@@ -37,7 +37,7 @@ int main( int argc, char* argv[] )
 
   new_client.install_rules( loop, [&] {
     std::cout << "storage server died" << std::endl;
-    new_client.socket_.close();
+    new_client.socket_recv_.close();
   } );
 
   MessageHandler message_handler_;
