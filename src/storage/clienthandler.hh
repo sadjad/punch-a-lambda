@@ -33,6 +33,19 @@ struct OutboundMessage
 {
   MessageType message_type_ {};
   Message message {};
+
+  OutboundMessage( std::string&& str )
+    : message_type_( MessageType::plaintext )
+  {
+    message.plain = std::move( str );
+  }
+
+  OutboundMessage( const void* ptr, const size_t len )
+    : message_type_( MessageType::pointer )
+  {
+    message.outptr.first = ptr;
+    message.outptr.second = len;
+  }
 };
 
 struct ClientHandler

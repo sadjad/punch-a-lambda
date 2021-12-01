@@ -22,7 +22,7 @@ int main( int argc, char* argv[] )
   std::cout << argc << std::endl;
   std::cout << argv[0] << std::endl;
 
-  int whoami = atoi(argv[1]);
+  int whoami = atoi( argv[1] );
 
   EventLoop loop;
 
@@ -46,17 +46,16 @@ int main( int argc, char* argv[] )
   } );
 
   int count = 0;
-  
+
   loop.add_rule(
     "print inbound messages",
     [&] {
       while ( not new_client.inbound_messages_.empty() ) {
         fout << "inbound messages" << new_client.inbound_messages_.front() << std::endl;
         new_client.inbound_messages_.pop_front();
-        if(count == 1000 || count == 0)
-        {
-            auto millisec_since_epoch = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-            std::cout << millisec_since_epoch << std::endl;
+        if ( count == 1000 || count == 0 ) {
+          auto millisec_since_epoch = duration_cast<milliseconds>( system_clock::now().time_since_epoch() ).count();
+          std::cout << millisec_since_epoch << std::endl;
         }
         count += 1;
       }
@@ -73,7 +72,7 @@ int main( int argc, char* argv[] )
 
   int it = 1000;
   std::vector<std::string> objects {};
-  std::vector<std::string> names {};    
+  std::vector<std::string> names {};
 
   objects.reserve( it );
   names.reserve( it );
@@ -83,68 +82,61 @@ int main( int argc, char* argv[] )
     names.emplace_back( "name" + to_string( i + 1 ) );
   }
 
-  if(whoami == 0) // sender
+  if ( whoami == 0 ) // sender
   {
-      for ( int i = 0; i < it; i++ ) {
-        OutboundMessage request1_header
-          = { plaintext, { {}, message_handler_.generate_local_object_header( names[i], objects[i].size() ) } };
-        OutboundMessage request1 = { pointer, { { objects[i].data(), objects[i].size() }, {} } };
+    for ( int i = 0; i < it; i++ ) {
+      OutboundMessage request1_header { message_handler_.generate_local_object_header( names[i], objects[i].size() ) };
+      OutboundMessage request1 { objects[i].data(), objects[i].size() };
 
-        new_client.outbound_messages_.push_back( request1_header );
-        new_client.outbound_messages_.push_back( request1 );
+      new_client.outbound_messages_.push_back( request1_header );
+      new_client.outbound_messages_.push_back( request1 );
 
-        OutboundMessage request2 = { plaintext, { {}, message_handler_.generate_local_lookup( names[i] ) } };
-
-        new_client.outbound_messages_.push_back( request2 );
-      }
-
-      // for (int i = 0; i < it; i ++) {
-      //   OutboundMessage request = {plaintext, {{}, message_handler_.generate_local_delete(names[i])}};
-      //   new_client.outbound_messages_.push_back(request);
-      // }
-  } 
-  
-  if (whoami == 1){
-
-    for(int i = 0; i < it; i ++){
-      OutboundMessage request = {plaintext, {{}, message_handler_.generate_local_remote_lookup(names[i], 0)}}; 
-      new_client.outbound_messages_.push_back(request);
+      OutboundMessage request2 { message_handler_.generate_local_lookup( names[i] ) };
+      new_client.outbound_messages_.push_back( request2 );
     }
 
-    seconds dura( 5);
-    std::this_thread::sleep_for( dura );
-
+    // for (int i = 0; i < it; i ++) {
+    //   OutboundMessage request = {plaintext, {{}, message_handler_.generate_local_delete(names[i])}};
+    //   new_client.outbound_messages_.push_back(request);
+    // }
   }
-  int size = 1000;
-  std::string object (size, 0);
-  if(whoami == 2) // benchmark
+
+  if ( whoami == 1 ) {
+
+    for ( int i = 0; i < it; i++ ) {
+      OutboundMessage request { message_handler_.generate_local_remote_lookup( names[i], 0 ) };
+      new_client.outbound_messages_.push_back( request );
+    }
+
+    seconds dura( 5 );
+    std::this_thread::sleep_for( dura );
+  }
+  size_t size = 1000;
+  std::string object( size, 0 );
+  if ( whoami == 2 ) // benchmark
   {
-    
-    
-    OutboundMessage request1_header
-          = { plaintext, { {}, message_handler_.generate_local_object_header( "quokka", size) } };
-    OutboundMessage request1 = { pointer, { { object.data(), size }, {} } };
+
+    OutboundMessage request1_header { message_handler_.generate_local_object_header( "quokka", size ) };
+    OutboundMessage request1 { object.data(), size };
     new_client.outbound_messages_.push_back( request1_header );
     new_client.outbound_messages_.push_back( request1 );
-    for(int i = 0; i < 1000000; i ++)
-    {
-      OutboundMessage request2 = { plaintext, { {}, message_handler_.generate_local_lookup( "quokka" ) } };
+    for ( int i = 0; i < 1000000; i++ ) {
+      OutboundMessage request2 { message_handler_.generate_local_lookup( "quokka" ) };
       new_client.outbound_messages_.push_back( request2 );
     }
   }
 
-  if(whoami == 3) // benchmark
+  if ( whoami == 3 ) // benchmark
   {
-    
-    for(int i = 0; i < 1000000; i ++)
-    {
-      OutboundMessage request1_header
-          = { plaintext, { {}, message_handler_.generate_local_object_header( "quokka" + to_string(i), size) } };
-      OutboundMessage request1 = { pointer, { { object.data(), size }, {} } };
+
+    for ( int i = 0; i < 1000000; i++ ) {
+      OutboundMessage request1_header { message_handler_.generate_local_object_header( "quokka" + to_string( i ),
+                                                                                       size ) };
+      OutboundMessage request1 { object.data(), size };
       new_client.outbound_messages_.push_back( request1_header );
       new_client.outbound_messages_.push_back( request1 );
-      OutboundMessage request = {plaintext, {{}, message_handler_.generate_local_delete("quokka"+ to_string(i))}};
-      new_client.outbound_messages_.push_back(request);
+      OutboundMessage request { message_handler_.generate_local_delete( "quokka" + to_string( i ) ) };
+      new_client.outbound_messages_.push_back( request );
     }
   }
 
