@@ -10,13 +10,6 @@
 #include "util/split.hh"
 #include "util/timerfd.hh"
 
-#define DEBUG 1
-#if DEBUG
-#define ERROR( x ) std::cout << ( "[" + std::to_string( __LINE__ ) + "] " + x + "\n" );
-#else
-#define ERROR( x )
-#endif
-
 enum MessageType
 {
   pointer,

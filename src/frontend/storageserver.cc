@@ -12,6 +12,7 @@
 #include "nat/peer.hh"
 #include "storage/clienthandler.hh"
 #include "storage/message.hh"
+#include "util/debug.hh"
 
 class StorageServer
 {
@@ -119,7 +120,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
     conn_it->second.install_rules( event_loop, [&, conn_it] {
-      ERROR( "died" );
+      DEBUGINFO( "died" );
       conn_it->second.socket_recv_.close();
       if ( conn_it->second.socket_send_.has_value() ) {
         conn_it->second.socket_send_->close();
@@ -137,7 +138,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
           msg::Message message { msg::MessageType::Remote, raw_message };
           const auto tag = message.tag();
 
-          ERROR( "message received: " + message.debug_info() );
+          DEBUGINFO( "message received: " + message.debug_info() );
 
           using MF = msg::MessageField;
           using OpCode = msg::OpCode;
@@ -153,7 +154,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               auto a = my_storage_.locate( name );
 
               if ( a.has_value() ) {
-                ERROR( "found object: " + name );
+                DEBUGINFO( "found object: " + name );
 
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
                 std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
@@ -162,7 +163,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                 OutboundMessage response { a.value().ptr, a.value().size };
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               } else {
-                ERROR( "did not find object: " + name );
+                DEBUGINFO( "did not find object: " + name );
 
                 OutboundMessage response { message_handler_.generate_remote_error( tag, "can't find object" ) };
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
@@ -291,7 +292,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 // case 0: {
                 //   int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
                 //   std::string name = message.substr( 5 );
-                //   ERROR( "storing:" + name + ";" );
+                //   DEBUGINFO( "storing:" + name + ";" );
                 //   auto a = my_storage_.new_object( name, size );
                 //   if ( a.has_value() ) {
                 //     std::stringstream result;
