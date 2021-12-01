@@ -137,7 +137,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
           msg::Message message { msg::MessageType::Remote, raw_message };
           const auto tag = message.tag();
 
-          ERROR( "message received" );
+          ERROR( "message received: " + message.debug_info() );
 
           using MF = msg::MessageField;
           using OpCode = msg::OpCode;
@@ -150,13 +150,10 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
             case OpCode::RemoteLookup: {
               const std::string& name = message.get_field( MF::Name );
-
-              ERROR( "looking up:" + name + ";" );
               auto a = my_storage_.locate( name );
 
               if ( a.has_value() ) {
-
-                ERROR( "found object" );
+                ERROR( "found object: " + name );
 
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
                 std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
@@ -165,8 +162,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                 OutboundMessage response { a.value().ptr, a.value().size };
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               } else {
-
-                ERROR( "did not find object" );
+                ERROR( "did not find object: " + name );
 
                 OutboundMessage response { message_handler_.generate_remote_error( tag, "can't find object" ) };
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
@@ -218,7 +214,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
             case OpCode::RemoteDelete: {
               // parse remote delete and parse remote lookup should be the same.
               const std::string& name = message.get_field( MF::Name );
-              ERROR( "deleting:" + name + ";" );
+
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
                 OutboundMessage response { message_handler_.generate_remote_success( tag, "deleted " + name ) };
@@ -313,7 +309,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
               case OpCode::LocalLookup: {
                 const std::string& name = message.get_field( MF::Name );
-                ERROR( "looking up:" + name + ";" );
+
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
                   OutboundMessage response_header { message_handler_.generate_local_object_header( name,
@@ -335,7 +331,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 const std::string& name = message.get_field( MF::Name );
                 std::string& object = message.get_field( MF::Object );
                 auto success = my_storage_.new_object_from_string( name, std::move( object ) );
-                ERROR( "storing:" + name + ";" )
+
                 if ( success == 0 ) {
                   OutboundMessage response { message_handler_.generate_local_success(
                     "made new object with pointer" ) };
@@ -361,7 +357,6 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
-                ERROR( "remote_request " + name + " to " + std::to_string( id ) );
                 OutboundMessage response { std::move( remote_request ) };
                 connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
                 break;

@@ -230,7 +230,7 @@ size_t get_hash( const std::string& key )
 std::string Message::debug_info() const
 {
   std::ostringstream oss;
-  oss << opcode_names[opcode()] << "( ";
+  oss << opcode_names[opcode()] << "(";
 
   switch ( opcode() ) {
     case OpCode::RemoteLookup:
@@ -274,6 +274,6 @@ std::string Message::debug_info() const
       break;
   }
 
-  oss << " )";
+  oss << ")";
   return oss.str();
 }
