@@ -157,10 +157,8 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                 DEBUGINFO( "found object: " + name );
 
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
-                std::string remote_request = message_handler_.generate_remote_store_header( tag, name, a.value().size );
-                OutboundMessage response_header { std::move( remote_request ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response_header ) );
-                OutboundMessage response { a.value().ptr, a.value().size };
+                std::string remote_request = message_handler_.generate_remote_store( tag, name, a->ptr, a->size );
+                OutboundMessage response { std::move( remote_request ) };
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               } else {
                 DEBUGINFO( "did not find object: " + name );
@@ -183,9 +181,8 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                   std::cout << "received remote object that nobody has asked for, storing it locally" << std::endl;
                 } else {
                   auto a = my_storage_.locate( name ).value();
-                  OutboundMessage response_header { message_handler_.generate_local_object_header( name, a.size ) };
-                  OutboundMessage response { a.ptr, a.size };
-                  requesting_client->second->buffered_remote_responses_[tag] = { response_header, response };
+                  OutboundMessage response { message_handler_.generate_local_object( name, a.ptr, a.size ) };
+                  requesting_client->second->buffered_remote_responses_[tag] = { response };
                 }
 
               } else {
@@ -196,9 +193,8 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                   auto a = my_storage_.locate( name );
                   if ( a.has_value() ) {
                     auto b = a.value();
-                    OutboundMessage response_header = { message_handler_.generate_local_object_header( name, b.size ) };
-                    OutboundMessage response { b.ptr, b.size };
-                    requesting_client->second->buffered_remote_responses_[tag] = { response_header, response };
+                    OutboundMessage response { message_handler_.generate_local_object( name, b.ptr, b.size ) };
+                    requesting_client->second->buffered_remote_responses_[tag] = { response };
                   } else {
                     OutboundMessage response { message_handler_.generate_local_error(
                       "can't create new local object with ptr, object also "

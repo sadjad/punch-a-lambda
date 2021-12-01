@@ -201,6 +201,7 @@ std::string Message::to_string()
     index += fields_[i].length();
   }
 
+  DEBUGINFO( "serialized message: " + debug_info() );
   return result;
 }
 
