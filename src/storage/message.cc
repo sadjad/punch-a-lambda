@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 
 using namespace msg;
@@ -29,6 +30,22 @@ void UniqueTagGenerator::allow( int key )
 {
   allowed.insert( key );
 }
+
+static std::map<OpCode, std::string> opcode_names = {
+  { OpCode::RemoteLookup, "RemoteLookup" },
+  { OpCode::RemoteDelete, "RemoteDelete" },
+  { OpCode::RemoteSuccess, "RemoteSuccess" },
+  { OpCode::RemoteError, "RemoteError" },
+  { OpCode::LocalLookup, "LocalLookup" },
+  { OpCode::LocalDelete, "LocalDelete" },
+  { OpCode::LocalSuccess, "LocalSuccess" },
+  { OpCode::LocalError, "LocalError" },
+  { OpCode::RemoteStore, "RemoteStore" },
+  { OpCode::LocalStore, "LocalStore" },
+  { OpCode::LocalRemoteLookup, "LocalRemoteLookup" },
+  { OpCode::LocalRemoteDelete, "LocalRemoteDelete" },
+  { OpCode::LocalRemoteStore, "LocalRemoteStore" },
+};
 
 static std::map<std::pair<OpCode, MessageField>, size_t> field_indices
   = { { { OpCode::RemoteLookup, MessageField::Name }, 0 },
@@ -195,4 +212,68 @@ void Message::set_field( const MessageField f, std::string&& s )
 std::string& Message::get_field( const MessageField f )
 {
   return fields_.at( field_indices.at( std::make_pair( opcode_, f ) ) );
+}
+
+const std::string& Message::get_field( const MessageField f ) const
+{
+  return fields_.at( field_indices.at( std::make_pair( opcode_, f ) ) );
+}
+
+size_t get_hash( const std::string& key )
+{
+  size_t result = 5381;
+  for ( const char c : key )
+    result = ( ( result << 5 ) + result ) + c;
+  return result;
+}
+
+std::string Message::debug_info() const
+{
+  std::ostringstream oss;
+  oss << opcode_names[opcode()] << "( ";
+
+  switch ( opcode() ) {
+    case OpCode::RemoteLookup:
+    case OpCode::RemoteDelete:
+    case OpCode::LocalLookup:
+    case OpCode::LocalDelete:
+      oss << "key=" << get_field( MessageField::Name );
+      break;
+
+    case OpCode::RemoteStore:
+    case OpCode::LocalStore: {
+      auto& object = get_field( MessageField::Object );
+      oss << "key=" << get_field( MessageField::Name ) << ", obj={.len=" << object.size()
+          << ", .hash=" << get_hash( object ) << "}";
+      break;
+    }
+
+    case OpCode::LocalRemoteLookup:
+    case OpCode::LocalRemoteDelete: {
+      oss << "key=" << get_field( MessageField::Name )
+          << ", remote_node=" << ( *reinterpret_cast<const int*>( get_field( MessageField::RemoteNode ).c_str() ) );
+      break;
+    }
+
+    case OpCode::LocalRemoteStore: {
+      auto& object = get_field( MessageField::Object );
+      oss << "key=" << get_field( MessageField::Name ) << ", obj={.len=" << object.size()
+          << ", .hash=" << get_hash( object ) << "}"
+          << ", remote_node=" << ( *reinterpret_cast<const int*>( get_field( MessageField::RemoteNode ).c_str() ) );
+      break;
+    }
+
+    case OpCode::RemoteSuccess:
+    case OpCode::RemoteError:
+    case OpCode::LocalError:
+    case OpCode::LocalSuccess:
+      oss << "message=" << get_field( MessageField::Message );
+      break;
+
+    default:
+      break;
+  }
+
+  oss << " )";
+  return oss.str();
 }

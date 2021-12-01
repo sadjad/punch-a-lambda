@@ -84,9 +84,12 @@ public:
 
   void set_field( const MessageField f, std::string&& s );
   std::string& get_field( const MessageField f );
+  const std::string& get_field( const MessageField f ) const;
 
   OpCode opcode() const { return opcode_; }
   int32_t tag() const { return tag_; }
+
+  std::string debug_info() const;
 };
 
 } // namespace msg
