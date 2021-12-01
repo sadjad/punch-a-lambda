@@ -10,7 +10,7 @@ int LocalStorage::get_total_size()
   return total_size_;
 }
 
-std::optional<Blob> LocalStorage::locate( const std::string &key )
+std::optional<Blob> LocalStorage::locate( const std::string& key )
 {
   std::unordered_map<std::string, Blob>::iterator got = storage_.find( key );
   if ( got == storage_.end() ) {
@@ -57,9 +57,8 @@ int LocalStorage::new_object_from_string( std::string key, std::string&& object 
     std::cerr << "Allocation surpassing maximum size" << std::endl;
     return 1;
   } else {
-    
 
-    if ( alias_.find( key ) != alias_.end() or storage_.find(key) != storage_.end() ) {
+    if ( alias_.find( key ) != alias_.end() or storage_.find( key ) != storage_.end() ) {
       std::cerr << "key is in aliases or already in storage" << std::endl;
       return 1;
     }
@@ -67,8 +66,7 @@ int LocalStorage::new_object_from_string( std::string key, std::string&& object 
     std::memcpy( ptr, object.c_str(), size );
     total_size_ += size;
     bool ok = storage_.insert( { key, { true, size, ptr } } ).second;
-    if(! ok)
-    {
+    if ( !ok ) {
       return 1;
     }
     key2alias_.insert( { key, {} } );

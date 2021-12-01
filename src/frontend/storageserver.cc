@@ -131,22 +131,26 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
       "pop messages",
       [&, conn_it] {
         while ( not conn_it->second.inbound_messages_.empty() ) {
-          std::string msg = conn_it->second.inbound_messages_.front();
+          std::string raw_message = conn_it->second.inbound_messages_.front();
           conn_it->second.inbound_messages_.pop_front();
+
+          msg::Message message { msg::MessageType::Remote, raw_message };
+          const auto tag = message.tag();
 
           ERROR( "message received" );
 
-          int opcode = stoi( msg.substr( 0, 1 ) );
-          switch ( opcode ) {
+          using MF = msg::MessageField;
+          using OpCode = msg::OpCode;
+
+          switch ( message.opcode() ) {
 
               // new object creation in localstorage, returns the pointer value as a string
               // currently useless without shared memory, but will be useful when shared memory is implemented.
               // look up an object in localstorage and stream out its contents to the output socket
 
-            case 1: {
-              auto result = message_handler_.parse_remote_lookup( msg );
-              std::string name = std::get<0>( result );
-              int tag = std::get<1>( result );
+            case OpCode::RemoteLookup: {
+              const std::string& name = message.get_field( MF::Name );
+
               ERROR( "looking up:" + name + ";" );
               auto a = my_storage_.locate( name );
 
@@ -164,21 +168,18 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
                 ERROR( "did not find object" );
 
-                std::string message = message_handler_.generate_remote_error( tag, "can't find object" );
-                OutboundMessage response { std::move( message ) };
+                OutboundMessage response { message_handler_.generate_remote_error( tag, "can't find object" ) };
                 conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
               }
               break;
             }
             // remote store request from this connection, must have been initiated by a remote lookup request sent from
             // here
-            case 2: {
-              auto result = message_handler_.parse_remote_store( msg );
-              std::string name = std::get<0>( result );
-              int size = name.length();
-              int tag = std::get<1>( result );
+            case OpCode::RemoteStore: {
+              const std::string& name = message.get_field( MF::Name );
+              std::string& object = message.get_field( MF::Object );
+              auto success = my_storage_.new_object_from_string( name, std::move( object ) );
 
-              auto success = my_storage_.new_object_from_string( name, std::move( msg.substr( 9 + size ) ) );
               if ( success == 0 ) {
                 auto requesting_client = outstanding_remote_requests_.find( tag );
                 if ( requesting_client == outstanding_remote_requests_.end() ) {
@@ -214,12 +215,10 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               break;
             }
             // delete
-            case 3: {
+            case OpCode::RemoteDelete: {
               // parse remote delete and parse remote lookup should be the same.
-              auto result = message_handler_.parse_remote_lookup( msg );
-              std::string name = std::get<0>( result );
-              int tag = std::get<1>( result );
-              ERROR( "looking up:" + name + ";" );
+              const std::string& name = message.get_field( MF::Name );
+              ERROR( "deleting:" + name + ";" );
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
                 OutboundMessage response { message_handler_.generate_remote_success( tag, "deleted " + name ) };
@@ -235,16 +234,15 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
             // got an opcode with an error code related to a remote request likely
 
             // currently remote success and remote failure get handled the same way
-            case 0:
-            case 5: {
-              auto error = message_handler_.parse_remote_error( msg );
-              int tag = std::get<1>( error );
-              std::string message = std::get<0>( error );
+            case OpCode::RemoteSuccess:
+            case OpCode::RemoteError: {
+              std::string& msg = message.get_field( MF::Message );
+
               auto requesting_client = outstanding_remote_requests_.find( tag );
               if ( requesting_client == outstanding_remote_requests_.end() ) {
                 std::cout << "received a remote message with a wierd tag, something's wrong" << std::endl;
               } else {
-                OutboundMessage response { std::move( message ) };
+                OutboundMessage response { std::move( msg ) };
                 requesting_client->second->buffered_remote_responses_[tag] = { response };
               }
               break;
@@ -281,37 +279,40 @@ void StorageServer::install_rules( EventLoop& event_loop )
         "pop messages",
         [&, client_it] {
           while ( not client_it->inbound_messages_.empty() ) {
-            std::string message = client_it->inbound_messages_.front();
+            std::string raw_message = client_it->inbound_messages_.front();
             client_it->inbound_messages_.pop_front();
-            int opcode = stoi( message.substr( 0, 1 ) );
-            ERROR( "message received: opcode=" + std::to_string( opcode ) );
 
-            switch ( opcode ) {
+            msg::Message message { msg::MessageType::Local, raw_message };
+
+            using MF = msg::MessageField;
+            using OpCode = msg::OpCode;
+
+            switch ( message.opcode() ) {
 
                 // new object creation in localstorage, returns the pointer value as a string
                 // currently useless without shared memory, but will be useful when shared memory is implemented.
 
-              case 0: {
-                int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
-                std::string name = message.substr( 5 );
-                ERROR( "storing:" + name + ";" );
-                auto a = my_storage_.new_object( name, size );
-                if ( a.has_value() ) {
-                  std::stringstream result;
-                  result << a.value();
-                  OutboundMessage response { std::move( result.str() ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
-                } else {
-                  OutboundMessage response { message_handler_.generate_local_error( "new object creation failed" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
-                }
-                break;
-              }
+                // case 0: {
+                //   int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
+                //   std::string name = message.substr( 5 );
+                //   ERROR( "storing:" + name + ";" );
+                //   auto a = my_storage_.new_object( name, size );
+                //   if ( a.has_value() ) {
+                //     std::stringstream result;
+                //     result << a.value();
+                //     OutboundMessage response { std::move( result.str() ) };
+                //     client_it->outbound_messages_.emplace_back( std::move( response ) );
+                //   } else {
+                //     OutboundMessage response { message_handler_.generate_local_error( "new object creation failed" )
+                //     }; client_it->outbound_messages_.emplace_back( std::move( response ) );
+                //   }
+                //   break;
+                // }
 
                 // look up an object in localstorage and stream out its contents to the output socket
 
-              case 1: {
-                std::string name = message_handler_.parse_local_lookup( message );
+              case OpCode::LocalLookup: {
+                const std::string& name = message.get_field( MF::Name );
                 ERROR( "looking up:" + name + ";" );
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
@@ -330,10 +331,10 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 // stores a new object by string into the localstorage
 
-              case 2: {
-                int size = *reinterpret_cast<const int*>( message.c_str() + 1 );
-                std::string name = message.substr( 5, size );
-                auto success = my_storage_.new_object_from_string( name, std::move( message.substr( 5 + size ) ) );
+              case OpCode::LocalStore: {
+                const std::string& name = message.get_field( MF::Name );
+                std::string& object = message.get_field( MF::Object );
+                auto success = my_storage_.new_object_from_string( name, std::move( object ) );
                 ERROR( "storing:" + name + ";" )
                 if ( success == 0 ) {
                   OutboundMessage response { message_handler_.generate_local_success(
@@ -348,13 +349,12 @@ void StorageServer::install_rules( EventLoop& event_loop )
               }
 
               // tells the storage server to send a get request to a remote server
-              case 3: {
-                auto result = message_handler_.parse_local_remote_lookup( message );
-                std::string name = std::get<0>( result );
-                int id = std::get<1>( result );
+              case OpCode::LocalRemoteLookup: {
+                const std::string& name = message.get_field( MF::Name );
+                const int id = *reinterpret_cast<const int*>( message.get_field( MF::RemoteNode ).c_str() );
 
                 // generate a unique tag for this local request which will be used to identify it
-                int tag = tag_generator_.emit();
+                const int tag = tag_generator_.emit();
                 std::string remote_request = message_handler_.generate_remote_lookup( tag, name );
                 // we need to remember which client who made this request
                 outstanding_remote_requests_.insert( { tag, &*client_it } );
@@ -367,12 +367,12 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 break;
               }
 
-              case 4: {
-                break;
-              }
+              case OpCode::LocalRemoteStore:
+                throw std::runtime_error( "not implemented" );
 
-              case 6: {
-                std::string name = message_handler_.parse_local_lookup( message );
+              case OpCode::LocalDelete: {
+                const std::string& name = message.get_field( MF::Name );
+
                 int result = my_storage_.delete_object( name );
                 if ( result == 0 ) {
                   OutboundMessage response { message_handler_.generate_local_success( "deleted " + name ) };
@@ -384,17 +384,16 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 break;
               }
 
-              case 7: {
-                auto result = message_handler_.parse_local_remote_lookup( message );
-                std::string name = std::get<0>( result );
-                int id = std::get<1>( result );
-                int tag = tag_generator_.emit();
+              case OpCode::LocalRemoteDelete: {
+                const std::string& name = message.get_field( MF::Name );
+                const int id = *reinterpret_cast<const int*>( message.get_field( MF::RemoteNode ).c_str() );
+                const int tag = tag_generator_.emit();
+
                 std::string remote_request = message_handler_.generate_remote_delete( tag, name );
                 outstanding_remote_requests_.insert( { tag, &*client_it } );
                 client_it->ordered_tags.push( tag );
 
                 OutboundMessage response { move( remote_request ) };
-                std::cout << id << std::endl;
                 connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
                 break;
               }

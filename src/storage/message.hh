@@ -1,10 +1,10 @@
 #include "assert.h"
 
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include <cstring>
 
 #include "util/util.hh"
 
@@ -218,17 +218,13 @@ public:
     return request.to_string();
   };
 
-  std::string generate_local_remote_lookup(std:: string name, int id)
+  std::string generate_local_remote_lookup( std::string name, int id )
   {
-    msg::Message request {msg::OpCode::LocalRemoteLookup};
-    request.set_field( msg::MessageField::Name , move(name ));
-    std::string remote_node  = "0000";
-    std::memcpy(remote_node.data(), &id, 4);
-    request.set_field( msg::MessageField::RemoteNode, move(remote_node));
-
-    std::cout << request.to_string() << std::endl;
+    msg::Message request { msg::OpCode::LocalRemoteLookup };
+    request.set_field( msg::MessageField::Name, move( name ) );
+    std::string remote_node = "0000";
+    std::memcpy( remote_node.data(), &id, 4 );
+    request.set_field( msg::MessageField::RemoteNode, move( remote_node ) );
     return request.to_string();
-
   }
-
 };
