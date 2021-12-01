@@ -10,7 +10,7 @@ int LocalStorage::get_total_size()
   return total_size_;
 }
 
-std::optional<Blob> LocalStorage::locate( std::string key )
+std::optional<Blob> LocalStorage::locate( const std::string &key )
 {
   std::unordered_map<std::string, Blob>::iterator got = storage_.find( key );
   if ( got == storage_.end() ) {
