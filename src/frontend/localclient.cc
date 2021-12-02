@@ -29,7 +29,7 @@ int main( int argc, char* argv[] )
   TCPSocket ready;
   ready.set_reuseaddr();
   ready.set_blocking( true );
-  ready.connect( { "127.0.0.1", 8079 } );
+  ready.connect( { "127.0.0.1",8079 } );
 
   cout << "storage server ready" << endl;
 
@@ -46,6 +46,7 @@ int main( int argc, char* argv[] )
   } );
 
   int count = 0;
+  int it = 1000;
 
   loop.add_rule(
     "print inbound messages",
@@ -53,16 +54,18 @@ int main( int argc, char* argv[] )
       while ( not new_client.inbound_messages_.empty() ) {
         fout << "inbound messages" << new_client.inbound_messages_.front() << std::endl;
         new_client.inbound_messages_.pop_front();
-        if ( count == 1000 || count == 0 ) {
+        
+        if ( count == it-1 || count == 0 ) {
           auto millisec_since_epoch = duration_cast<milliseconds>( system_clock::now().time_since_epoch() ).count();
           std::cout << millisec_since_epoch << std::endl;
         }
         count += 1;
+
       }
     },
     [&] { return new_client.inbound_messages_.size() > 0; } );
 
-  TimerFD termination_timer { seconds { 30 } };
+  TimerFD termination_timer { seconds {15 } };
 
   bool terminated = false;
   loop.add_rule(
@@ -70,7 +73,7 @@ int main( int argc, char* argv[] )
 
   MessageHandler message_handler_;
 
-  int it = 1000;
+  size_t size = 10000;
   std::vector<std::string> objects {};
   std::vector<std::string> names {};
 
@@ -78,8 +81,8 @@ int main( int argc, char* argv[] )
   names.reserve( it );
 
   for ( int i = 0; i < it; i++ ) {
-    objects.emplace_back( "object" + to_string( i ) );
-    names.emplace_back( "name" + to_string( i + 1 ) );
+    objects.emplace_back( size, 0 );
+    names.emplace_back( "name" + to_string(i) );
   }
 
   if ( whoami == 0 ) // sender
@@ -103,6 +106,8 @@ int main( int argc, char* argv[] )
 
   if ( whoami == 1 ) {
 
+
+
     for ( int i = 0; i < it; i++ ) {
       OutboundMessage request { message_handler_.generate_local_remote_lookup( names[i], 0 ) };
       new_client.outbound_messages_.push_back( request );
@@ -111,7 +116,20 @@ int main( int argc, char* argv[] )
     seconds dura( 5 );
     std::this_thread::sleep_for( dura );
   }
-  size_t size = 1000;
+
+  if ( whoami == 4 ) {
+
+
+
+    for ( int i = 0; i < it; i++ ) {
+      OutboundMessage request { message_handler_.generate_local_remote_lookup( names[i], 1 ) };
+      new_client.outbound_messages_.push_back( request );
+    }
+
+    seconds dura( 5 );
+    std::this_thread::sleep_for( dura );
+  }
+  
   std::string object( size, 0 );
   if ( whoami == 2 ) // benchmark
   {

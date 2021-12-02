@@ -46,8 +46,8 @@ struct ClientHandler
   TCPSocket socket_recv_ {};
   std::optional<TCPSocket> socket_send_ { std::nullopt };
 
-  RingBuffer send_buffer_ { 4096 };
-  RingBuffer read_buffer_ { 4096 };
+  RingBuffer send_buffer_ { 81920 };
+  RingBuffer read_buffer_ { 81920 };
 
   std::string temp_inbound_message_ {};
   size_t expected_length { 4 };
@@ -60,6 +60,9 @@ struct ClientHandler
 
   std::vector<EventLoop::RuleHandle> things_to_kill {};
 
+  std::ofstream debug_ { "/tmp/debug1", std::ios::binary | std::ios::trunc };
+
+
   // fsm:
   // state 0: starting state, don't know expected length
   // state 1: in the middle of a message
@@ -71,7 +74,9 @@ struct ClientHandler
 
   ClientHandler( TCPSocket&& socket_recv, TCPSocket&& socket_send )
     : socket_recv_( std::move( socket_recv ) )
-    , socket_send_( std::move( socket_send ) )
+    , socket_send_( std::move( socket_send ) ),
+    debug_("/tmp/debug", std::ios::binary | std::ios::trunc )
+
   {}
 
   void parse()
@@ -185,6 +190,8 @@ struct ClientHandler
         }
       },
       [&] {
+        std::cout << expected_length << std::endl;
+        debug_ << read_buffer_.readable_region() << std::endl << std::endl;
         return temp_inbound_message_.length() >= expected_length or not read_buffer_.readable_region().empty();
       } ) );
 

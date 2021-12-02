@@ -54,7 +54,7 @@ StorageServer::StorageServer( size_t size, const uint16_t port )
     listener_socket.listen();
     return listener_socket;
   }() )
-  , tag_generator_( 1000 ) // supports 1000 concurrent tags, should be more than enough
+  , tag_generator_( 300000 ) // supports 1000 concurrent tags, should be more than enough
 {}
 
 void StorageServer::connect_lambda( std::string coordinator_ip,
@@ -95,23 +95,26 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     int id = it.first;
     std::string ip = it.second;
 
-    TCPSocket socket_send;
-    Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
-    socket_send.set_reuseaddr();
-    socket_send.set_blocking( false );
-    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
-    socket_send.connect( address_recv );
+    // TCPSocket socket_send;
+    // Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
+    // socket_send.set_reuseaddr();
+    // socket_send.set_blocking( false );
+    // socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+    // socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
     Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
-    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
+    socket_recv.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
     socket_recv.connect( address_send );
 
+    // auto r = connections_.emplace( std::piecewise_construct,
+    //                                std::forward_as_tuple( id ),
+    //                                std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
     auto r = connections_.emplace( std::piecewise_construct,
                                    std::forward_as_tuple( id ),
-                                   std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
+                                   std::forward_as_tuple( std::move( socket_recv )) );
     if ( !r.second ) {
       assert( false );
     }
@@ -449,7 +452,7 @@ int main( int argc, char* argv[] )
   const uint32_t block_dim = std::stoul( argv[5] );
 
   EventLoop loop;
-  StorageServer storage_server( 200'000'000, listen_port );
+  StorageServer storage_server( 2'000'000'000, listen_port );
   storage_server.install_rules( loop );
 
   // std::map<size_t, std::string> input {{0,argv[1]}};
