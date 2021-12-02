@@ -66,31 +66,31 @@ void stress_test_new_creation()
   printf( " == C allocation == \n== at %.5f milliseconds == \n ", ms_double.count() );
 }
 
-void test_add_alias()
-{
-  auto a = new LocalStorage( 1024 * 1024 * 1024 );
-  std::string test { "bump" };
-  require( a->new_object( test, 1000 ).has_value() );
-  a->add( "bump", "foobar" );
-  require( a->locate( "foobar" ).has_value() );
-  delete a;
-}
+// void test_add_alias()
+// {
+//   auto a = new LocalStorage( 1024 * 1024 * 1024 );
+//   std::string test { "bump" };
+//   require( a->new_object( test, 1000 ).has_value() );
+//   a->add( "bump", "foobar" );
+//   require( a->locate( "foobar" ).has_value() );
+//   delete a;
+// }
 
-void test_grow()
-{
-  auto a = new LocalStorage( 1024 * 1024 * 1024 );
-  std::string test { "bump" };
-  require( a->new_object( test, 1000 ).has_value() );
-  a->add( "bump", "foobar" );
-  require( a->locate( "foobar" ).has_value() );
+// void test_grow()
+// {
+//   auto a = new LocalStorage( 1024 * 1024 * 1024 );
+//   std::string test { "bump" };
+//   require( a->new_object( test, 1000 ).has_value() );
+//   a->add( "bump", "foobar" );
+//   require( a->locate( "foobar" ).has_value() );
 
-  require( a->grow( "bump", 2000 ) == 0 );
-  require( a->grow( "foobar", 3000 ) == 0 );
+//   require( a->grow( "bump", 2000 ) == 0 );
+//   require( a->grow( "foobar", 3000 ) == 0 );
 
-  require( a->locate( "bump" ).value().size == 6000 );
+//   require( a->locate( "bump" ).value().size == 6000 );
 
-  delete a;
-}
+//   delete a;
+// }
 
 void test_delete();
 
@@ -99,6 +99,6 @@ int main()
   test_new_creation1();
   test_new_creation2();
   stress_test_new_creation();
-  test_add_alias();
-  test_grow();
+  // test_add_alias();
+  // test_grow();
 }

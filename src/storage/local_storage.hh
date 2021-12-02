@@ -19,8 +19,6 @@ class LocalStorage
 {
 private:
   std::unordered_map<std::string, Blob> storage_ {};
-  std::unordered_map<std::string, std::string> alias_ {};
-  std::unordered_map<std::string, std::vector<std::string>> key2alias_ {};
   size_t total_size_;
   size_t max_size_;
 
@@ -33,5 +31,4 @@ public:
   int commit( std::string key );
   int grow( std::string key, size_t size );
   int delete_object( std::string key );
-  int add( std::string key, std::string alias );
 };
