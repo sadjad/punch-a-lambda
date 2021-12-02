@@ -3,7 +3,7 @@
 
 #define DEBUG 1
 #if DEBUG
-#define DEBUGINFO( x ) std::cout << ( "[" + std::to_string( __LINE__ ) + "] " + x + "\n" );
+#define DEBUGINFO( x ) std::cout << ( std::string( "[storageserver] " ) + x + "\n" );
 #else
 #define DEBUGINFO( x )
 #endif

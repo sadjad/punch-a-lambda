@@ -141,7 +141,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
           msg::Message message { msg::MessageType::Remote, raw_message };
           const auto tag = message.tag();
 
-          DEBUGINFO( "message received: " + message.debug_info() );
+          DEBUGINFO( "RECV " + message.debug_info() );
 
           using MF = msg::MessageField;
           using OpCode = msg::OpCode;
@@ -157,8 +157,6 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               auto a = my_storage_.locate( name );
 
               if ( a.has_value() ) {
-                DEBUGINFO( "found object: " + name );
-
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
                 std::string remote_request = message_handler_.generate_remote_store( tag, name, a->ptr, a->size );
                 OutboundMessage response { std::move( remote_request ) };
