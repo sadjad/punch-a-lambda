@@ -27,7 +27,7 @@ private:
 public:
   LocalStorage( size_t max_size );
   int get_total_size();
-  std::optional<Blob> locate( std::string );
+  std::optional<Blob> locate( const std::string& key );
   std::optional<void*> new_object( std::string key, size_t size );
   int new_object_from_string( std::string key, std::string&& object );
   int commit( std::string key );

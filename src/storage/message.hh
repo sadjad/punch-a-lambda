@@ -1,11 +1,12 @@
 #include "assert.h"
 
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include <cstring>
 
+#include "util/debug.hh"
 #include "util/util.hh"
 
 class UniqueTagGenerator
@@ -84,9 +85,12 @@ public:
 
   void set_field( const MessageField f, std::string&& s );
   std::string& get_field( const MessageField f );
+  const std::string& get_field( const MessageField f ) const;
 
   OpCode opcode() const { return opcode_; }
   int32_t tag() const { return tag_; }
+
+  std::string debug_info() const;
 };
 
 } // namespace msg
@@ -121,7 +125,19 @@ public:
     p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 9 ) );
     p[0] = name.length();
     return remote_request;
-  };
+  }
+
+  std::string generate_remote_store( int tag, std::string name, const void* ptr, const size_t len )
+  {
+    std::string payload;
+    payload.resize( len );
+    memcpy( payload.data(), ptr, len );
+
+    msg::Message remote_request { msg::OpCode::RemoteStore, tag };
+    remote_request.set_field( msg::MessageField::Name, std::move( name ) );
+    remote_request.set_field( msg::MessageField::Object, std::move( payload ) );
+    return remote_request.to_string();
+  }
 
   std::string generate_remote_error( int tag, std::string error )
   {
@@ -168,6 +184,18 @@ public:
     p = reinterpret_cast<int*>( const_cast<char*>( remote_request.c_str() + 5 ) );
     p[0] = name.length();
     return remote_request;
+  }
+
+  std::string generate_local_object( std::string name, const void* ptr, const size_t len )
+  {
+    std::string payload;
+    payload.resize( len );
+    memcpy( payload.data(), ptr, len );
+
+    msg::Message message { msg::OpCode::LocalStore };
+    message.set_field( msg::MessageField::Name, std::move( name ) );
+    message.set_field( msg::MessageField::Object, std::move( payload ) );
+    return message.to_string();
   }
 
   std::string generate_local_error( std::string error )
@@ -218,17 +246,13 @@ public:
     return request.to_string();
   };
 
-  std::string generate_local_remote_lookup(std:: string name, int id)
+  std::string generate_local_remote_lookup( std::string name, int id )
   {
-    msg::Message request {msg::OpCode::LocalRemoteLookup};
-    request.set_field( msg::MessageField::Name , move(name ));
-    std::string remote_node  = "0000";
-    std::memcpy(remote_node.data(), &id, 4);
-    request.set_field( msg::MessageField::RemoteNode, move(remote_node));
-
-    std::cout << request.to_string() << std::endl;
+    msg::Message request { msg::OpCode::LocalRemoteLookup };
+    request.set_field( msg::MessageField::Name, move( name ) );
+    std::string remote_node = "0000";
+    std::memcpy( remote_node.data(), &id, 4 );
+    request.set_field( msg::MessageField::RemoteNode, move( remote_node ) );
     return request.to_string();
-
   }
-
 };
