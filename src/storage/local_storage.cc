@@ -64,13 +64,14 @@ int LocalStorage::new_object_from_string( std::string key, std::string&& object 
       return 1;
     }
     void* ptr = malloc( size );
-    std::memcpy( ptr, object.c_str(), size );
-    total_size_ += size;
+    
     bool ok = storage_.insert( { key, { true, size, ptr } } ).second;
     if(! ok)
     {
       return 1;
     }
+    std::memcpy( ptr, object.c_str(), size );
+    total_size_ += size;
     key2alias_.insert( { key, {} } );
     return 0;
   }
