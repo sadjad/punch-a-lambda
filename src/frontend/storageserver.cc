@@ -28,7 +28,7 @@ private:
   std::map<int, ClientHandler> connections_ {};
   MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
-  std::unordered_map<int, ClientHandler*> outstanding_remote_requests_ {};
+  std::unordered_map<int, std::list<ClientHandler>::iterator> outstanding_remote_requests_ {};
 
 public:
   StorageServer( size_t size, const uint16_t port );
@@ -135,8 +135,10 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
       "pop messages",
       [&, conn_it] {
         while ( not conn_it->second.inbound_messages_.empty() ) {
-          std::string raw_message = conn_it->second.inbound_messages_.front();
-          conn_it->second.inbound_messages_.pop_front();
+          auto& conn = conn_it->second;
+
+          std::string raw_message = std::move( conn_it->second.inbound_messages_.front() );
+          conn.inbound_messages_.pop_front();
 
           msg::Message message { msg::MessageType::Remote, raw_message };
           const auto tag = message.tag();
@@ -160,12 +162,12 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
                 std::string remote_request = message_handler_.generate_remote_store( tag, name, a->ptr, a->size );
                 OutboundMessage response { std::move( remote_request ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back( std::move( response ) );
               } else {
                 DEBUGINFO( "did not find object: " + name );
 
                 OutboundMessage response { message_handler_.generate_remote_error( tag, "can't find object" ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back( std::move( response ) );
               }
               break;
             }
@@ -216,10 +218,10 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
                 OutboundMessage response { message_handler_.generate_remote_success( tag, "deleted " + name ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back( std::move( response ) );
               } else {
                 OutboundMessage response { message_handler_.generate_remote_error( tag, "failed to delete " + name ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back( std::move( response ) );
               }
               tag_generator_.allow( tag );
               break;
@@ -243,7 +245,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
             }
             default: {
               OutboundMessage response { message_handler_.generate_local_error( "unidentified opcode" ) };
-              conn_it->second.outbound_messages_.emplace_back( response );
+              conn.outbound_messages_.emplace_back( response );
               break;
             }
           }
@@ -273,10 +275,12 @@ void StorageServer::install_rules( EventLoop& event_loop )
         "pop messages",
         [&, client_it] {
           while ( not client_it->inbound_messages_.empty() ) {
-            std::string raw_message = client_it->inbound_messages_.front();
+            std::string raw_message = std::move( client_it->inbound_messages_.front() );
             client_it->inbound_messages_.pop_front();
 
             msg::Message message { msg::MessageType::Local, raw_message };
+
+            DEBUGINFO( "RECV_LOCAL " + message.debug_info() );
 
             using MF = msg::MessageField;
             using OpCode = msg::OpCode;
@@ -310,11 +314,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
-                  OutboundMessage response_header { message_handler_.generate_local_object_header( name,
-                                                                                                   a.value().size ) };
-                  std::string_view bump( reinterpret_cast<const char*>( a.value().ptr ), a.value().size );
-                  OutboundMessage response { a.value().ptr, a.value().size };
-                  client_it->outbound_messages_.emplace_back( std::move( response_header ) );
+                  OutboundMessage response { message_handler_.generate_local_object( name, a->ptr, a->size ) };
                   client_it->outbound_messages_.emplace_back( std::move( response ) );
                 } else {
                   OutboundMessage response { message_handler_.generate_local_error( "can't find object" ) };
@@ -351,7 +351,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 const int tag = tag_generator_.emit();
                 std::string remote_request = message_handler_.generate_remote_lookup( tag, name );
                 // we need to remember which client who made this request
-                outstanding_remote_requests_.insert( { tag, &*client_it } );
+                outstanding_remote_requests_.insert( { tag, client_it } );
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
@@ -383,7 +383,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 const int tag = tag_generator_.emit();
 
                 std::string remote_request = message_handler_.generate_remote_delete( tag, name );
-                outstanding_remote_requests_.insert( { tag, &*client_it } );
+                outstanding_remote_requests_.insert( { tag, client_it } );
                 client_it->ordered_tags.push( tag );
 
                 OutboundMessage response { move( remote_request ) };

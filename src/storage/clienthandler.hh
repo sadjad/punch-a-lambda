@@ -60,8 +60,12 @@ struct ClientHandler
 
   std::vector<EventLoop::RuleHandle> things_to_kill {};
 
-  std::ofstream debug_ { "/tmp/debug1", std::ios::binary | std::ios::trunc };
+  std::ofstream debug_;
 
+  ClientHandler( const ClientHandler& ) = delete;
+  ClientHandler& operator=( const ClientHandler& ) = delete;
+  ClientHandler( ClientHandler&& ) = delete;
+  ClientHandler& operator=( ClientHandler&& ) = delete;
 
   // fsm:
   // state 0: starting state, don't know expected length
@@ -70,13 +74,13 @@ struct ClientHandler
 
   ClientHandler( TCPSocket&& socket )
     : socket_recv_( std::move( socket ) )
+    , debug_( "/tmp/debug1", std::ios::binary | std::ios::trunc )
   {}
 
   ClientHandler( TCPSocket&& socket_recv, TCPSocket&& socket_send )
     : socket_recv_( std::move( socket_recv ) )
-    , socket_send_( std::move( socket_send ) ),
-    debug_("/tmp/debug", std::ios::binary | std::ios::trunc )
-
+    , socket_send_( std::move( socket_send ) )
+    , debug_( "/tmp/debug0", std::ios::binary | std::ios::trunc )
   {}
 
   void parse()
@@ -177,7 +181,7 @@ struct ClientHandler
         [&] { send_buffer_.write_to( socket_recv_ ); },
         [&] { return not send_buffer_.readable_region().empty(); },
         [&, f = close_callback] {
-          std::cout << "client died (send socket)" << std::endl;
+          std::cout << "client died" << std::endl;
           f();
         } ) );
     }
