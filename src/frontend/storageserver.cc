@@ -73,16 +73,18 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   this->connect( thread_id, peer_addresses, event_loop );
   
   event_loop.add_rule(
-  "hello", Direction::In, termination_timer_, [&] { 
+  "hello", Direction::In, termination_timer_, 
+  [&] { 
+    termination_timer_.read_event();
     for(auto &it : connections_)
     {
       auto my_id = it.first;
-      auto conn_it = it.second;
+      auto& conn_it = it.second;
       msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
       hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
       std::string hello_message_string = hello_message.to_string();
-      conn_it->second.outbound_messages_.emplace_back( std::move( hello_message_string) ); }}, 
-      [&] { return true; } );
+      conn_it.outbound_messages_.emplace_back( std::move( hello_message_string) ); }}, 
+   [&] { return true; } );
     
 
     
