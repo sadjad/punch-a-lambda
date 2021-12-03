@@ -36,6 +36,9 @@ enum class OpCode : uint16_t
   RemoteStore = 0x2,
   RemoteDelete = 0x3,
 
+  // remote noop
+  RemoteHello = 0xF,
+
   // remote responses
   RemoteSuccess = 0x0,
   RemoteObject = 0x2,

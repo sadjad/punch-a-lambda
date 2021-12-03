@@ -131,6 +131,10 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
       connections_.erase( conn_it );
     } );
 
+    msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+    hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+    conn_it->second.outbound_messages_.emplace_back( hello_message.to_string() );
+
     event_loop.add_rule(
       "pop messages",
       [&, conn_it] {
@@ -151,6 +155,11 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               // new object creation in localstorage, returns the pointer value as a string
               // currently useless without shared memory, but will be useful when shared memory is implemented.
               // look up an object in localstorage and stream out its contents to the output socket
+
+            case OpCode::RemoteHello: {
+              // do nothing
+              break;
+            }
 
             case OpCode::RemoteLookup: {
               const std::string& name = message.get_field( MF::Name );

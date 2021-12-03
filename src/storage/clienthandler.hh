@@ -46,8 +46,8 @@ struct ClientHandler
   TCPSocket socket_recv_ {};
   std::optional<TCPSocket> socket_send_ { std::nullopt };
 
-  RingBuffer send_buffer_ { 81920 };
-  RingBuffer read_buffer_ { 81920 };
+  RingBuffer send_buffer_ { 4096 };
+  RingBuffer read_buffer_ { 4096 };
 
   std::string temp_inbound_message_ {};
   size_t expected_length { 4 };
