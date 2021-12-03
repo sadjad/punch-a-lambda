@@ -46,7 +46,7 @@ int main( int argc, char* argv[] )
   } );
 
   int count = 0;
-  int it = 1000;
+  int it = 100;
 
   loop.add_rule(
     "print inbound messages",
@@ -65,7 +65,7 @@ int main( int argc, char* argv[] )
     },
     [&] { return new_client.inbound_messages_.size() > 0; } );
 
-  TimerFD termination_timer { seconds {15 } };
+  TimerFD termination_timer { seconds {20 } };
 
   bool terminated = false;
   loop.add_rule(

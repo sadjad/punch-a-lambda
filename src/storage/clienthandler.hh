@@ -9,6 +9,7 @@
 #include "util/ring_buffer.hh"
 #include "util/split.hh"
 #include "util/timerfd.hh"
+#include "util/debug.hh"
 
 enum MessageType
 {
@@ -46,8 +47,8 @@ struct ClientHandler
   TCPSocket socket_recv_ {};
   std::optional<TCPSocket> socket_send_ { std::nullopt };
 
-  RingBuffer send_buffer_ { 81920 };
-  RingBuffer read_buffer_ { 81920 };
+  RingBuffer send_buffer_ { 4096 * 4 };
+  RingBuffer read_buffer_ { 4096 * 4 };
 
   std::string temp_inbound_message_ {};
   size_t expected_length { 4 };
@@ -118,7 +119,9 @@ struct ClientHandler
   void produce()
   {
     auto& message = outbound_messages_.front();
+    
     if ( message.message_type_ == plaintext ) {
+      DEBUGINFO(message.message.plain);
       // ERROR( "producing plaintext" );
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );
       if ( bytes_wrote == message.message.plain.length() ) {
@@ -129,7 +132,7 @@ struct ClientHandler
     } else {
       // write the memory location pointed to by this pointer to the send buffer. first create a stringview from this
       // pointer
-
+      //DEBUGINFO(message.);
       std::string_view a( reinterpret_cast<const char*>( message.message.outptr.first ),
                           message.message.outptr.second );
       // ERROR( "producing ptr" );
@@ -190,8 +193,9 @@ struct ClientHandler
         }
       },
       [&] {
-        std::cout << expected_length << std::endl;
-        debug_ << read_buffer_.readable_region() << std::endl << std::endl;
+        std::cout << socket_recv_.fd_num()  << std::endl;
+        std::cout << "expected length of incoming message"<< expected_length << std::endl;
+        std::cout << "read buffer readable region size" <<read_buffer_.readable_region().size() << std::endl ;
         return temp_inbound_message_.length() >= expected_length or not read_buffer_.readable_region().empty();
       } ) );
 
@@ -202,7 +206,11 @@ struct ClientHandler
           produce();
         }
       },
-      [&] { return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty(); } ) );
+      [&] {
+        std::cout << socket_recv_.fd_num()  << std::endl;
+        std::cout << "send buffer writeable region size" << send_buffer_.writable_region().size() << std::endl;
+        std::cout << "number of outstanding outbound messages " << outbound_messages_.size() << std::endl; 
+        return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty(); } ) );
   }
 
   ~ClientHandler()
