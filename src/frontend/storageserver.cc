@@ -1,4 +1,5 @@
 #include <chrono>
+#include <csignal>
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
@@ -13,6 +14,7 @@
 #include "storage/clienthandler.hh"
 #include "storage/message.hh"
 #include "util/debug.hh"
+#include "util/signalfd.hh"
 
 class StorageServer
 {
@@ -99,14 +101,14 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     Address address_recv { ip, static_cast<uint16_t>( 10000 + my_id ) };
     socket_send.set_reuseaddr();
     socket_send.set_blocking( false );
-    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + id ) } );
+    socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + id ) } );
     socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
     Address address_send { ip, static_cast<uint16_t>( 20000 + my_id ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
-    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + id ) } );
+    socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + id ) } );
     socket_recv.connect( address_send );
 
     auto r = connections_.emplace( std::piecewise_construct,
@@ -439,7 +441,6 @@ int main( int argc, char* argv[] )
   }
 
   try {
-
     const std::string master_ip { argv[1] };
     const uint16_t master_port = static_cast<uint16_t>( std::stoul( argv[2] ) );
     const uint16_t listen_port = static_cast<uint16_t>( std::stoul( argv[3] ) );
@@ -447,6 +448,19 @@ int main( int argc, char* argv[] )
     const uint32_t block_dim = std::stoul( argv[5] );
 
     EventLoop loop;
+
+    SignalMask signals { SIGHUP, SIGTERM, SIGQUIT, SIGINT };
+    SignalFD signal_fd { signals };
+    signals.set_as_mask();
+
+    bool is_program_terminated = false;
+    loop.add_rule(
+      "termination",
+      Direction::In,
+      signal_fd,
+      [&is_program_terminated] { is_program_terminated = true; },
+      [&is_program_terminated] { return not is_program_terminated; } );
+
     StorageServer storage_server( 2'000'000'000, listen_port );
     storage_server.install_rules( loop );
 
@@ -456,8 +470,8 @@ int main( int argc, char* argv[] )
     storage_server.setup_ready_socket( loop );
     // storage_server.set_up_local();
 
-    loop.set_fd_failure_callback( [] {} );
-    while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
+    loop.set_fd_failure_callback( [] { std::cout << "file descriptor failed" << std::endl; } );
+    while ( not is_program_terminated and loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
       ;
 
     std::cout << loop.summary() << std::endl;
