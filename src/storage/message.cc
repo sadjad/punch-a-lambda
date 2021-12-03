@@ -162,7 +162,7 @@ Message::Message( const MessageType type, const std::string& str )
   }
 }
 
-void Message::calculate_length()
+void Message::calculate_length() 
 {
   length_ = sizeof( length_ ) + sizeof( uint8_t ) + ( ( type_ == MessageType::Remote ) ? sizeof( tag_ ) : 0 );
 
@@ -174,7 +174,7 @@ void Message::calculate_length()
   }
 }
 
-std::string Message::to_string()
+std::string Message::to_string() 
 {
   std::string result;
 

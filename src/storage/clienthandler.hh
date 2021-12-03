@@ -197,9 +197,9 @@ struct ClientHandler
         }
       },
       [&] {
-        std::cout << socket_recv_.fd_num()  << std::endl;
-        std::cout << "expected length of incoming message"<< expected_length << std::endl;
-        std::cout << "read buffer readable region size" <<read_buffer_.readable_region().size() << std::endl ;
+        //std::cout << socket_recv_.fd_num()  << std::endl;
+        //std::cout << "expected length of incoming message"<< expected_length << std::endl;
+        //std::cout << "read buffer readable region size" <<read_buffer_.readable_region().size() << std::endl ;
         return temp_inbound_message_.length() >= expected_length or not read_buffer_.readable_region().empty();
       } ) );
 
@@ -211,9 +211,9 @@ struct ClientHandler
         }
       },
       [&] {
-        std::cout << socket_recv_.fd_num()  << std::endl;
-        std::cout << "send buffer writeable region size" << send_buffer_.writable_region().size() << std::endl;
-        std::cout << "number of outstanding outbound messages " << outbound_messages_.size() << std::endl; 
+        //std::cout << socket_recv_.fd_num()  << std::endl;
+        //std::cout << "send buffer writeable region size" << send_buffer_.writable_region().size() << std::endl;
+        //std::cout << "number of outstanding outbound messages " << outbound_messages_.size() << std::endl; 
         return outbound_messages_.size() > 0 and not send_buffer_.writable_region().empty(); } ) );
   }
 

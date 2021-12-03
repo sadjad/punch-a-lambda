@@ -15,6 +15,7 @@
 #include "storage/message.hh"
 #include "util/debug.hh"
 #include "util/signalfd.hh"
+#include <chrono>
 
 class StorageServer
 {
@@ -31,6 +32,7 @@ private:
   MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
   std::unordered_map<int, std::list<ClientHandler>::iterator> outstanding_remote_requests_ {};
+  TimerFD termination_timer_ { std::chrono::seconds {3 } };
 
 public:
   StorageServer( size_t size, const uint16_t port );
@@ -69,6 +71,21 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   std::map<size_t, std::string> peer_addresses
     = get_peer_addresses( thread_id, coordinator_ip, coordinator_port, block_dim, fout );
   this->connect( thread_id, peer_addresses, event_loop );
+  
+  event_loop.add_rule(
+  "hello", Direction::In, termination_timer_, [&] { 
+    for(auto &it : connections_)
+    {
+      auto my_id = it.first;
+      auto conn_it = it.second;
+      msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+      hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+      std::string hello_message_string = hello_message.to_string();
+      conn_it->second.outbound_messages_.emplace_back( std::move( hello_message_string) ); }}, 
+      [&] { return true; } );
+    
+
+    
 }
 
 void StorageServer::setup_ready_socket( EventLoop& event_loop )
@@ -98,40 +115,22 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     std::string ip = it.second;
 
     TCPSocket socket_send;
-<<<<<<< HEAD
-    Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
-    socket_send.set_reuseaddr();
-    socket_send.set_blocking( false );
-    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
-=======
     Address address_recv { ip, static_cast<uint16_t>( 10000 + my_id ) };
     socket_send.set_reuseaddr();
     socket_send.set_blocking( false );
     socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + id ) } );
->>>>>>> d8d457095537d2a4427886a54e4349617b7f0b2f
     socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
     Address address_send { ip, static_cast<uint16_t>( 20000 + my_id ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
-<<<<<<< HEAD
-    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
-=======
     socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + id ) } );
->>>>>>> d8d457095537d2a4427886a54e4349617b7f0b2f
     socket_recv.connect( address_send );
 
     auto r = connections_.emplace( std::piecewise_construct,
                                    std::forward_as_tuple( id ),
                                    std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
-<<<<<<< HEAD
-    // auto r = connections_.emplace( std::piecewise_construct,
-    //                                std::forward_as_tuple( id ),
-    //                                std::forward_as_tuple( std::move( socket_recv )) );
-=======
-
->>>>>>> d8d457095537d2a4427886a54e4349617b7f0b2f
     if ( !r.second ) {
       assert( false );
     }
@@ -148,9 +147,12 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
       connections_.erase( conn_it );
     } );
 
-    msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
-    hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
-    conn_it->second.outbound_messages_.emplace_back( hello_message.to_string() );
+    // msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+    // hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+    // std::string hello_message_string = hello_message.to_string();
+    // conn_it->second.outbound_messages_.emplace_back( std::move( hello_message_string) );
+
+    
 
     event_loop.add_rule(
       "pop messages",
@@ -494,6 +496,7 @@ int main( int argc, char* argv[] )
     // std::map<size_t, std::string> input {{0,argv[1]}};
     // storage_server.connect(input, loop);
     storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
+
     storage_server.setup_ready_socket( loop );
     // storage_server.set_up_local();
 
