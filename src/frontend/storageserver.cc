@@ -311,12 +311,13 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
-                  OutboundMessage response { message_handler_.generate_local_object( name, a->ptr, a->size ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_object( name, a->ptr, a->size ) );
                 } else {
-                  OutboundMessage response { message_handler_.generate_local_error( "can't find object" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_error( "can't find object" ) );
                 }
+
                 break;
               }
 
@@ -328,13 +329,11 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 auto success = my_storage_.new_object_from_string( name, std::move( object ) );
 
                 if ( success == 0 ) {
-                  OutboundMessage response { message_handler_.generate_local_success(
-                    "made new object with pointer" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_success( "made new object with pointer" ) );
                 } else {
-                  OutboundMessage response { message_handler_.generate_local_error(
-                    "can't create new object with ptr" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_error( "can't create new object with ptr" ) );
                 }
                 break;
               }
@@ -346,14 +345,14 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 // generate a unique tag for this local request which will be used to identify it
                 const int tag = tag_generator_.emit();
-                std::string remote_request = message_handler_.generate_remote_lookup( tag, name );
+
                 // we need to remember which client who made this request
                 outstanding_remote_requests_.insert( { tag, client_it } );
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
-                OutboundMessage response { std::move( remote_request ) };
-                connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
+                connections_.at( id ).outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_lookup( tag, name ) );
                 break;
               }
 
@@ -365,11 +364,11 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 int result = my_storage_.delete_object( name );
                 if ( result == 0 ) {
-                  OutboundMessage response { message_handler_.generate_local_success( "deleted " + name ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_success( "deleted " + name ) );
                 } else {
-                  OutboundMessage response { message_handler_.generate_local_error( "failed to delete " + name ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_error( "failed to delete " + name ) );
                 }
                 break;
               }
@@ -379,18 +378,17 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 const int id = *reinterpret_cast<const int*>( message.get_field( MF::RemoteNode ).c_str() );
                 const int tag = tag_generator_.emit();
 
-                std::string remote_request = message_handler_.generate_remote_delete( tag, name );
                 outstanding_remote_requests_.insert( { tag, client_it } );
                 client_it->ordered_tags.push( tag );
 
-                OutboundMessage response { move( remote_request ) };
-                connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
+                connections_.at( id ).outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_delete( tag, name ) );
                 break;
               }
 
               default: {
-                OutboundMessage response { message_handler_.generate_local_error( "unidentified opcode" ) };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
+                client_it->outbound_messages_.emplace_back(
+                  message_handler_.generate_local_error( "unidentified opcode" ) );
                 break;
               }
             }
@@ -401,14 +399,17 @@ void StorageServer::install_rules( EventLoop& event_loop )
       rules_to_delete.push_back( event_loop.add_rule(
         "buffer to responses",
         [&, client_it] {
-          while ( not client_it->ordered_tags.empty()
-                  && client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
-                       != client_it->buffered_remote_responses_.end() ) {
-            for ( auto it : client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )->second ) {
-              client_it->outbound_messages_.emplace_back(
-                it ); // better call the copy constructor here, we will remove the thing later.
+          while ( not client_it->ordered_tags.empty() ) {
+            auto responses_it = client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() );
+            if ( responses_it == client_it->buffered_remote_responses_.end() ) {
+              break;
             }
-            client_it->buffered_remote_responses_.erase( client_it->ordered_tags.front() );
+
+            for ( auto& it : responses_it->second ) {
+              client_it->outbound_messages_.emplace_back( std::move( it ) );
+            }
+
+            client_it->buffered_remote_responses_.erase( responses_it );
             client_it->ordered_tags.pop();
           }
         },
@@ -474,7 +475,7 @@ int main( int argc, char* argv[] )
     while ( not is_program_terminated and loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
       ;
 
-    std::cout << loop.summary() << std::endl;
+    // std::cout << loop.summary() << std::endl;
   } catch ( std::exception& ex ) {
     print_exception( argv[0], ex );
     return EXIT_FAILURE;
