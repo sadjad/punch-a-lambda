@@ -1,4 +1,5 @@
 #include <chrono>
+#include <csignal>
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
@@ -13,6 +14,7 @@
 #include "storage/clienthandler.hh"
 #include "storage/message.hh"
 #include "util/debug.hh"
+#include "util/signalfd.hh"
 
 class StorageServer
 {
@@ -28,7 +30,7 @@ private:
   std::map<int, ClientHandler> connections_ {};
   MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
-  std::unordered_map<int, ClientHandler*> outstanding_remote_requests_ {};
+  std::unordered_map<int, std::list<ClientHandler>::iterator> outstanding_remote_requests_ {};
 
 public:
   StorageServer( size_t size, const uint16_t port );
@@ -96,25 +98,40 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     std::string ip = it.second;
 
     TCPSocket socket_send;
+<<<<<<< HEAD
     Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
     socket_send.set_reuseaddr();
     socket_send.set_blocking( false );
     socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+=======
+    Address address_recv { ip, static_cast<uint16_t>( 10000 + my_id ) };
+    socket_send.set_reuseaddr();
+    socket_send.set_blocking( false );
+    socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + id ) } );
+>>>>>>> d8d457095537d2a4427886a54e4349617b7f0b2f
     socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
-    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
+    Address address_send { ip, static_cast<uint16_t>( 20000 + my_id ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
+<<<<<<< HEAD
     socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + my_id ) } );
+=======
+    socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + id ) } );
+>>>>>>> d8d457095537d2a4427886a54e4349617b7f0b2f
     socket_recv.connect( address_send );
 
     auto r = connections_.emplace( std::piecewise_construct,
                                    std::forward_as_tuple( id ),
                                    std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
+<<<<<<< HEAD
     // auto r = connections_.emplace( std::piecewise_construct,
     //                                std::forward_as_tuple( id ),
     //                                std::forward_as_tuple( std::move( socket_recv )) );
+=======
+
+>>>>>>> d8d457095537d2a4427886a54e4349617b7f0b2f
     if ( !r.second ) {
       assert( false );
     }
@@ -131,14 +148,18 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
       connections_.erase( conn_it );
     } );
 
+    msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+    hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+    conn_it->second.outbound_messages_.emplace_back( hello_message.to_string() );
+
     event_loop.add_rule(
       "pop messages",
       [&, conn_it] {
         while ( not conn_it->second.inbound_messages_.empty() ) {
-          std::string raw_message = conn_it->second.inbound_messages_.front();
-          conn_it->second.inbound_messages_.pop_front();
+          auto& conn = conn_it->second;
 
-          msg::Message message { msg::MessageType::Remote, raw_message };
+          msg::Message message { msg::MessageType::Remote, conn.inbound_messages_.front() };
+          conn.inbound_messages_.pop_front();
           const auto tag = message.tag();
 
           DEBUGINFO( "RECV " + message.debug_info() );
@@ -152,20 +173,22 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               // currently useless without shared memory, but will be useful when shared memory is implemented.
               // look up an object in localstorage and stream out its contents to the output socket
 
+            case OpCode::RemoteHello: {
+              // do nothing
+              break;
+            }
+
             case OpCode::RemoteLookup: {
               const std::string& name = message.get_field( MF::Name );
               auto a = my_storage_.locate( name );
 
               if ( a.has_value() ) {
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
-                std::string remote_request = message_handler_.generate_remote_store( tag, name, a->ptr, a->size );
-                OutboundMessage response { std::move( remote_request ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_store( tag, name, a->ptr, a->size ) );
               } else {
-                DEBUGINFO( "did not find object: " + name );
-
-                OutboundMessage response { message_handler_.generate_remote_error( tag, "can't find object" ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_error( tag, "can't find object" ) );
               }
               break;
             }
@@ -215,11 +238,11 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
-                OutboundMessage response { message_handler_.generate_remote_success( tag, "deleted " + name ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_success( tag, "deleted " + name ) );
               } else {
-                OutboundMessage response { message_handler_.generate_remote_error( tag, "failed to delete " + name ) };
-                conn_it->second.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_error( tag, "failed to delete " + name ) );
               }
               tag_generator_.allow( tag );
               break;
@@ -236,14 +259,16 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               if ( requesting_client == outstanding_remote_requests_.end() ) {
                 std::cout << "received a remote message with a wierd tag, something's wrong" << std::endl;
               } else {
-                OutboundMessage response { std::move( msg ) };
+                OutboundMessage response { message.opcode() == OpCode::RemoteError
+                                             ? message_handler_.generate_local_error( msg )
+                                             : message_handler_.generate_local_success( msg ) };
+
                 requesting_client->second->buffered_remote_responses_[tag] = { response };
               }
               break;
             }
             default: {
-              OutboundMessage response { message_handler_.generate_local_error( "unidentified opcode" ) };
-              conn_it->second.outbound_messages_.emplace_back( response );
+              conn.outbound_messages_.emplace_back( message_handler_.generate_local_error( "unidentified opcode" ) );
               break;
             }
           }
@@ -273,10 +298,12 @@ void StorageServer::install_rules( EventLoop& event_loop )
         "pop messages",
         [&, client_it] {
           while ( not client_it->inbound_messages_.empty() ) {
-            std::string raw_message = client_it->inbound_messages_.front();
+            std::string raw_message = std::move( client_it->inbound_messages_.front() );
             client_it->inbound_messages_.pop_front();
 
             msg::Message message { msg::MessageType::Local, raw_message };
+
+            DEBUGINFO( "RECV_LOCAL " + message.debug_info() );
 
             using MF = msg::MessageField;
             using OpCode = msg::OpCode;
@@ -310,16 +337,13 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 auto a = my_storage_.locate( name );
                 if ( a.has_value() ) {
-                  OutboundMessage response_header { message_handler_.generate_local_object_header( name,
-                                                                                                   a.value().size ) };
-                  std::string_view bump( reinterpret_cast<const char*>( a.value().ptr ), a.value().size );
-                  OutboundMessage response { a.value().ptr, a.value().size };
-                  client_it->outbound_messages_.emplace_back( std::move( response_header ) );
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_object( name, a->ptr, a->size ) );
                 } else {
-                  OutboundMessage response { message_handler_.generate_local_error( "can't find object" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_error( "can't find object" ) );
                 }
+
                 break;
               }
 
@@ -331,13 +355,11 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 auto success = my_storage_.new_object_from_string( name, std::move( object ) );
 
                 if ( success == 0 ) {
-                  OutboundMessage response { message_handler_.generate_local_success(
-                    "made new object with pointer" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_success( "made new object with pointer" ) );
                 } else {
-                  OutboundMessage response { message_handler_.generate_local_error(
-                    "can't create new object with ptr" ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_error( "can't create new object with ptr" ) );
                 }
                 break;
               }
@@ -349,14 +371,14 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 // generate a unique tag for this local request which will be used to identify it
                 const int tag = tag_generator_.emit();
-                std::string remote_request = message_handler_.generate_remote_lookup( tag, name );
+
                 // we need to remember which client who made this request
-                outstanding_remote_requests_.insert( { tag, &*client_it } );
+                outstanding_remote_requests_.insert( { tag, client_it } );
                 // push the tag into local FIFO queue to maintain response order
                 client_it->ordered_tags.push( tag );
 
-                OutboundMessage response { std::move( remote_request ) };
-                connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
+                connections_.at( id ).outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_lookup( tag, name ) );
                 break;
               }
 
@@ -368,11 +390,11 @@ void StorageServer::install_rules( EventLoop& event_loop )
 
                 int result = my_storage_.delete_object( name );
                 if ( result == 0 ) {
-                  OutboundMessage response { message_handler_.generate_local_success( "deleted " + name ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_success( "deleted " + name ) );
                 } else {
-                  OutboundMessage response { message_handler_.generate_local_error( "failed to delete " + name ) };
-                  client_it->outbound_messages_.emplace_back( std::move( response ) );
+                  client_it->outbound_messages_.emplace_back(
+                    message_handler_.generate_local_error( "failed to delete " + name ) );
                 }
                 break;
               }
@@ -382,18 +404,17 @@ void StorageServer::install_rules( EventLoop& event_loop )
                 const int id = *reinterpret_cast<const int*>( message.get_field( MF::RemoteNode ).c_str() );
                 const int tag = tag_generator_.emit();
 
-                std::string remote_request = message_handler_.generate_remote_delete( tag, name );
-                outstanding_remote_requests_.insert( { tag, &*client_it } );
+                outstanding_remote_requests_.insert( { tag, client_it } );
                 client_it->ordered_tags.push( tag );
 
-                OutboundMessage response { move( remote_request ) };
-                connections_.at( id ).outbound_messages_.emplace_back( std::move( response ) );
+                connections_.at( id ).outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_delete( tag, name ) );
                 break;
               }
 
               default: {
-                OutboundMessage response { message_handler_.generate_local_error( "unidentified opcode" ) };
-                client_it->outbound_messages_.emplace_back( std::move( response ) );
+                client_it->outbound_messages_.emplace_back(
+                  message_handler_.generate_local_error( "unidentified opcode" ) );
                 break;
               }
             }
@@ -404,14 +425,17 @@ void StorageServer::install_rules( EventLoop& event_loop )
       rules_to_delete.push_back( event_loop.add_rule(
         "buffer to responses",
         [&, client_it] {
-          while ( not client_it->ordered_tags.empty()
-                  && client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )
-                       != client_it->buffered_remote_responses_.end() ) {
-            for ( auto it : client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() )->second ) {
-              client_it->outbound_messages_.emplace_back(
-                it ); // better call the copy constructor here, we will remove the thing later.
+          while ( not client_it->ordered_tags.empty() ) {
+            auto responses_it = client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() );
+            if ( responses_it == client_it->buffered_remote_responses_.end() ) {
+              break;
             }
-            client_it->buffered_remote_responses_.erase( client_it->ordered_tags.front() );
+
+            for ( auto& it : responses_it->second ) {
+              client_it->outbound_messages_.emplace_back( std::move( it ) );
+            }
+
+            client_it->buffered_remote_responses_.erase( responses_it );
             client_it->ordered_tags.pop();
           }
         },
@@ -443,27 +467,45 @@ int main( int argc, char* argv[] )
     return EXIT_FAILURE;
   }
 
-  const std::string master_ip { argv[1] };
-  const uint16_t master_port = static_cast<uint16_t>( std::stoul( argv[2] ) );
-  const uint16_t listen_port = static_cast<uint16_t>( std::stoul( argv[3] ) );
-  const uint32_t thread_id = std::stoul( argv[4] );
-  const uint32_t block_dim = std::stoul( argv[5] );
+  try {
+    const std::string master_ip { argv[1] };
+    const uint16_t master_port = static_cast<uint16_t>( std::stoul( argv[2] ) );
+    const uint16_t listen_port = static_cast<uint16_t>( std::stoul( argv[3] ) );
+    const uint32_t thread_id = std::stoul( argv[4] );
+    const uint32_t block_dim = std::stoul( argv[5] );
 
-  EventLoop loop;
-  StorageServer storage_server( 2'000'000'000, listen_port );
-  storage_server.install_rules( loop );
+    EventLoop loop;
 
-  // std::map<size_t, std::string> input {{0,argv[1]}};
-  // storage_server.connect(input, loop);
-  storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
-  storage_server.setup_ready_socket( loop );
-  // storage_server.set_up_local();
+    SignalMask signals { SIGHUP, SIGTERM, SIGQUIT, SIGINT };
+    SignalFD signal_fd { signals };
+    signals.set_as_mask();
 
-  loop.set_fd_failure_callback( [] {} );
-  while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
-    ;
+    bool is_program_terminated = false;
+    loop.add_rule(
+      "termination",
+      Direction::In,
+      signal_fd,
+      [&is_program_terminated] { is_program_terminated = true; },
+      [&is_program_terminated] { return not is_program_terminated; } );
 
-  std::cout << loop.summary() << std::endl;
+    StorageServer storage_server( 2'000'000'000, listen_port );
+    storage_server.install_rules( loop );
+
+    // std::map<size_t, std::string> input {{0,argv[1]}};
+    // storage_server.connect(input, loop);
+    storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
+    storage_server.setup_ready_socket( loop );
+    // storage_server.set_up_local();
+
+    loop.set_fd_failure_callback( [] { std::cout << "file descriptor failed" << std::endl; } );
+    while ( not is_program_terminated and loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
+      ;
+
+    // std::cout << loop.summary() << std::endl;
+  } catch ( std::exception& ex ) {
+    print_exception( argv[0], ex );
+    return EXIT_FAILURE;
+  }
 
   return EXIT_SUCCESS;
 }
