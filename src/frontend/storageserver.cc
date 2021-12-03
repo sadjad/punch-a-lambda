@@ -135,10 +135,8 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
         while ( not conn_it->second.inbound_messages_.empty() ) {
           auto& conn = conn_it->second;
 
-          std::string raw_message = std::move( conn_it->second.inbound_messages_.front() );
+          msg::Message message { msg::MessageType::Remote, conn.inbound_messages_.front() };
           conn.inbound_messages_.pop_front();
-
-          msg::Message message { msg::MessageType::Remote, raw_message };
           const auto tag = message.tag();
 
           DEBUGINFO( "RECV " + message.debug_info() );
@@ -158,14 +156,11 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
               if ( a.has_value() ) {
                 // we are actually going to just send a opcode 2 response right back to the one who sent the request.
-                std::string remote_request = message_handler_.generate_remote_store( tag, name, a->ptr, a->size );
-                OutboundMessage response { std::move( remote_request ) };
-                conn.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_store( tag, name, a->ptr, a->size ) );
               } else {
-                DEBUGINFO( "did not find object: " + name );
-
-                OutboundMessage response { message_handler_.generate_remote_error( tag, "can't find object" ) };
-                conn.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_error( tag, "can't find object" ) );
               }
               break;
             }
@@ -215,11 +210,11 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
               int a = my_storage_.delete_object( name );
               if ( a == 0 ) {
-                OutboundMessage response { message_handler_.generate_remote_success( tag, "deleted " + name ) };
-                conn.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_success( tag, "deleted " + name ) );
               } else {
-                OutboundMessage response { message_handler_.generate_remote_error( tag, "failed to delete " + name ) };
-                conn.outbound_messages_.emplace_back( std::move( response ) );
+                conn.outbound_messages_.emplace_back(
+                  message_handler_.generate_remote_error( tag, "failed to delete " + name ) );
               }
               tag_generator_.allow( tag );
               break;
@@ -236,14 +231,16 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
               if ( requesting_client == outstanding_remote_requests_.end() ) {
                 std::cout << "received a remote message with a wierd tag, something's wrong" << std::endl;
               } else {
-                OutboundMessage response { std::move( msg ) };
+                OutboundMessage response { message.opcode() == OpCode::RemoteError
+                                             ? message_handler_.generate_local_error( msg )
+                                             : message_handler_.generate_local_success( msg ) };
+
                 requesting_client->second->buffered_remote_responses_[tag] = { response };
               }
               break;
             }
             default: {
-              OutboundMessage response { message_handler_.generate_local_error( "unidentified opcode" ) };
-              conn.outbound_messages_.emplace_back( response );
+              conn.outbound_messages_.emplace_back( message_handler_.generate_local_error( "unidentified opcode" ) );
               break;
             }
           }
@@ -441,27 +438,33 @@ int main( int argc, char* argv[] )
     return EXIT_FAILURE;
   }
 
-  const std::string master_ip { argv[1] };
-  const uint16_t master_port = static_cast<uint16_t>( std::stoul( argv[2] ) );
-  const uint16_t listen_port = static_cast<uint16_t>( std::stoul( argv[3] ) );
-  const uint32_t thread_id = std::stoul( argv[4] );
-  const uint32_t block_dim = std::stoul( argv[5] );
+  try {
 
-  EventLoop loop;
-  StorageServer storage_server( 2'000'000'000, listen_port );
-  storage_server.install_rules( loop );
+    const std::string master_ip { argv[1] };
+    const uint16_t master_port = static_cast<uint16_t>( std::stoul( argv[2] ) );
+    const uint16_t listen_port = static_cast<uint16_t>( std::stoul( argv[3] ) );
+    const uint32_t thread_id = std::stoul( argv[4] );
+    const uint32_t block_dim = std::stoul( argv[5] );
 
-  // std::map<size_t, std::string> input {{0,argv[1]}};
-  // storage_server.connect(input, loop);
-  storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
-  storage_server.setup_ready_socket( loop );
-  // storage_server.set_up_local();
+    EventLoop loop;
+    StorageServer storage_server( 2'000'000'000, listen_port );
+    storage_server.install_rules( loop );
 
-  loop.set_fd_failure_callback( [] {} );
-  while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
-    ;
+    // std::map<size_t, std::string> input {{0,argv[1]}};
+    // storage_server.connect(input, loop);
+    storage_server.connect_lambda( master_ip, master_port, thread_id, block_dim, loop );
+    storage_server.setup_ready_socket( loop );
+    // storage_server.set_up_local();
 
-  std::cout << loop.summary() << std::endl;
+    loop.set_fd_failure_callback( [] {} );
+    while ( loop.wait_next_event( -1 ) != EventLoop::Result::Exit )
+      ;
+
+    std::cout << loop.summary() << std::endl;
+  } catch ( std::exception& ex ) {
+    print_exception( argv[0], ex );
+    return EXIT_FAILURE;
+  }
 
   return EXIT_SUCCESS;
 }
