@@ -125,7 +125,7 @@ struct ClientHandler
     auto& message = outbound_messages_.front();
     
     if ( message.message_type_ == plaintext ) {
-      DEBUGINFO(message.message.plain);
+      //DEBUGINFO(message.message.plain);
       // ERROR( "producing plaintext" );
       const size_t bytes_wrote = send_buffer_.write( message.message.plain );
       if ( bytes_wrote == message.message.plain.length() ) {
