@@ -95,26 +95,24 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     int id = it.first;
     std::string ip = it.second;
 
-    // TCPSocket socket_send;
-    // Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
-    // socket_send.set_reuseaddr();
-    // socket_send.set_blocking( false );
-    // socket_send.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
-    // socket_send.connect( address_recv );
+    TCPSocket socket_send;
+    Address address_recv { ip, static_cast<uint16_t>( 10000 + my_id ) };
+    socket_send.set_reuseaddr();
+    socket_send.set_blocking( false );
+    socket_send.bind( { "0", static_cast<uint16_t>( 20000 + id ) } );
+    socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
-    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
+    Address address_send { ip, static_cast<uint16_t>( 20000 + my_id ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
-    socket_recv.bind( { "0", static_cast<uint16_t>( 20000 + my_id ) } );
+    socket_recv.bind( { "0", static_cast<uint16_t>( 10000 + id ) } );
     socket_recv.connect( address_send );
 
-    // auto r = connections_.emplace( std::piecewise_construct,
-    //                                std::forward_as_tuple( id ),
-    //                                std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
     auto r = connections_.emplace( std::piecewise_construct,
                                    std::forward_as_tuple( id ),
-                                   std::forward_as_tuple( std::move( socket_recv )) );
+                                   std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
+
     if ( !r.second ) {
       assert( false );
     }
