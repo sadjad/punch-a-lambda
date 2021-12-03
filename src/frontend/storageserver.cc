@@ -32,7 +32,7 @@ private:
   MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
   std::unordered_map<int, std::list<ClientHandler>::iterator> outstanding_remote_requests_ {};
-  TimerFD termination_timer_ { std::chrono::seconds {3 } };
+  TimerFD termination_timer_ { std::chrono::seconds { 3 } };
 
 public:
   StorageServer( size_t size, const uint16_t port );
@@ -71,23 +71,22 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   std::map<size_t, std::string> peer_addresses
     = get_peer_addresses( thread_id, coordinator_ip, coordinator_port, block_dim, fout );
   this->connect( thread_id, peer_addresses, event_loop );
-  
-  event_loop.add_rule(
-  "hello", Direction::In, termination_timer_, 
-  [&] { 
-    termination_timer_.read_event();
-    for(auto &it : connections_)
-    {
-      auto my_id = it.first;
-      auto& conn_it = it.second;
-      msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
-      hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
-      std::string hello_message_string = hello_message.to_string();
-      conn_it.outbound_messages_.emplace_back( std::move( hello_message_string) ); }}, 
-   [&] { return true; } );
-    
 
-    
+  event_loop.add_rule(
+    "hello",
+    Direction::In,
+    termination_timer_,
+    [&, my_id = thread_id] {
+      termination_timer_.read_event();
+
+      for ( auto& it : connections_ ) {
+        auto& conn_it = it.second;
+        msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+        hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+        conn_it.outbound_messages_.emplace_back( hello_message.to_string() );
+      }
+    },
+    [&] { return true; } );
 }
 
 void StorageServer::setup_ready_socket( EventLoop& event_loop )
@@ -153,8 +152,6 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     // hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
     // std::string hello_message_string = hello_message.to_string();
     // conn_it->second.outbound_messages_.emplace_back( std::move( hello_message_string) );
-
-    
 
     event_loop.add_rule(
       "pop messages",
