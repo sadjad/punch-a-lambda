@@ -116,17 +116,17 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     std::string ip = it.second;
 
     TCPSocket socket_send;
-    Address address_recv { ip, static_cast<uint16_t>( 10000 + my_id ) };
+    Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
     socket_send.set_reuseaddr();
     socket_send.set_blocking( false );
-    socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + id ) } );
+    socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + my_id ) } );
     socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
-    Address address_send { ip, static_cast<uint16_t>( 20000 + my_id ) };
+    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
-    socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + id ) } );
+    socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + my_id ) } );
     socket_recv.connect( address_send );
 
     auto r = connections_.emplace( std::piecewise_construct,
