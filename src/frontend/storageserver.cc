@@ -204,6 +204,9 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                 auto requesting_client = outstanding_remote_requests_.find( tag );
                 if ( requesting_client == outstanding_remote_requests_.end() ) {
                   std::cout << "received remote object that nobody has asked for, storing it locally" << std::endl;
+
+                  // reallow this tag.
+                  tag_generator_.allow( tag );
                 } else {
                   auto a = my_storage_.locate( name ).value();
                   OutboundMessage response { message_handler_.generate_local_object( name, a.ptr, a.size ) };
@@ -228,8 +231,7 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
                   }
                 }
               }
-              // reallow this tag.
-              tag_generator_.allow( tag );
+
               break;
             }
             // delete
@@ -427,7 +429,9 @@ void StorageServer::install_rules( EventLoop& event_loop )
         "buffer to responses",
         [&, client_it] {
           while ( not client_it->ordered_tags.empty() ) {
-            auto responses_it = client_it->buffered_remote_responses_.find( client_it->ordered_tags.front() );
+            const auto tag = client_it->ordered_tags.front();
+
+            auto responses_it = client_it->buffered_remote_responses_.find( tag );
             if ( responses_it == client_it->buffered_remote_responses_.end() ) {
               break;
             }
@@ -436,6 +440,7 @@ void StorageServer::install_rules( EventLoop& event_loop )
               client_it->outbound_messages_.emplace_back( std::move( it ) );
             }
 
+            tag_generator_.allow( tag );
             client_it->buffered_remote_responses_.erase( responses_it );
             client_it->ordered_tags.pop();
           }
