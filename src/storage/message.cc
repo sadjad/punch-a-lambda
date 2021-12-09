@@ -46,6 +46,7 @@ static std::map<OpCode, std::string> opcode_names = {
   { OpCode::LocalRemoteDelete, "LocalRemoteDelete" },
   { OpCode::LocalRemoteStore, "LocalRemoteStore" },
   { OpCode::RemoteHello, "RemoteHello" },
+  { OpCode::RemoteAck, "RemoteAck"}
 };
 
 static std::map<std::pair<OpCode, MessageField>, size_t> field_indices
@@ -68,7 +69,10 @@ static std::map<std::pair<OpCode, MessageField>, size_t> field_indices
       { { OpCode::LocalRemoteDelete, MessageField::RemoteNode }, 1 },
       { { OpCode::LocalSuccess, MessageField::Message }, 0 },
       { { OpCode::LocalError, MessageField::Message }, 0 },
-      { { OpCode::RemoteHello, MessageField::Name }, 0 } };
+      { { OpCode::RemoteHello, MessageField::Name} ,0 },
+      { { OpCode::RemoteHello, MessageField::SeqNum }, 1 },
+      { { OpCode::RemoteAck, MessageField::Name }, 0},
+      { { OpCode::RemoteAck, MessageField::SeqNum} , 1 }  };
 
 MessageType get_message_type( const OpCode opcode )
 {
@@ -78,7 +82,7 @@ MessageType get_message_type( const OpCode opcode )
 size_t get_field_count( const OpCode opcode )
 {
   switch ( opcode ) {
-    case OpCode::RemoteHello:
+    
     case OpCode::RemoteLookup:
     case OpCode::RemoteDelete:
     case OpCode::RemoteSuccess:
@@ -88,7 +92,8 @@ size_t get_field_count( const OpCode opcode )
     case OpCode::LocalSuccess:
     case OpCode::LocalError:
       return 1;
-
+    case OpCode::RemoteHello:
+    case OpCode::RemoteAck:
     case OpCode::RemoteStore:
     case OpCode::LocalStore:
     case OpCode::LocalRemoteLookup:
@@ -239,7 +244,9 @@ std::string Message::debug_info() const
 
   switch ( opcode() ) {
     case OpCode::RemoteHello:
+    case OpCode::RemoteAck:
       oss << "name=" << get_field( MessageField::Name );
+      oss << "state=" << get_field( MessageField::SeqNum );
       break;
 
     case OpCode::RemoteLookup:

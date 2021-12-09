@@ -29,6 +29,12 @@ private:
   // must not use unordered_map because we are going to need the iterator to persist in our event loop lambda
   // declarations!
   std::map<int, ClientHandler> connections_ {};
+
+  // required data structures for reliable communication (reopens downed connections)
+  std::map<int, int> hello_seqnum_ {};
+  std::map<int, int> last_ack_ {};
+  std::map<int, int> port_offsets_{};
+
   MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
   std::unordered_map<int, std::list<ClientHandler>::iterator> outstanding_remote_requests_ {};
@@ -41,7 +47,7 @@ public:
                        uint32_t thread_id,
                        uint32_t block_dim,
                        EventLoop& event_loop );
-  void connect( const uint32_t my_id, std::map<size_t, std::string>& ips, EventLoop& event_loop );
+  void connect( const uint32_t my_id, const uint32_t id, std::string ip, EventLoop& event_loop, int port_offset );
   void setup_ready_socket( EventLoop& event_loop );
   void install_rules( EventLoop& event_loop );
 };
@@ -70,20 +76,61 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
   std::ofstream fout { "/tmp/out" };
   std::map<size_t, std::string> peer_addresses
     = get_peer_addresses( thread_id, coordinator_ip, coordinator_port, block_dim, fout );
-  this->connect( thread_id, peer_addresses, event_loop );
+  for ( auto& it : peer_addresses ) {
+      int id = it.first;
+      std::string ip = it.second;
+      hello_seqnum_.emplace(id,0);
+      last_ack_.emplace(id,0);
+      port_offsets_.emplace(id,0);
+      this->connect( thread_id, id, ip , event_loop, 0 );
+  }
 
   event_loop.add_rule(
     "hello",
     Direction::In,
     termination_timer_,
-    [&, my_id = thread_id] {
+    [&, my_id = thread_id, peer_addresses] {
       termination_timer_.read_event();
 
-      for ( auto& it : connections_ ) {
-        auto& conn_it = it.second;
-        msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
-        hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
-        conn_it.outbound_messages_.emplace_back( hello_message.to_string() );
+      for ( auto it = peer_addresses.begin(); it != peer_addresses.end(); it++ ) {
+        int id = it->first;
+
+        // check if the id is still in connections 
+
+        if(connections_.find(id) != connections_.end()) 
+        {
+          auto& conn_it = connections_.at(id);
+
+          int hello_seqnum = hello_seqnum_[id];
+          int last_ack = last_ack_[id];
+
+          std::cout << hello_seqnum << " " << last_ack << std::endl;
+
+          //if(false)
+          if(last_ack > hello_seqnum - 2)
+          {
+            msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+            hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+            hello_message.set_field( msg::MessageField::SeqNum, std::to_string(hello_seqnum +1 ) );
+            conn_it.outbound_messages_.emplace_back( hello_message.to_string() );
+            hello_seqnum_[id] = hello_seqnum + 1; 
+
+          } else 
+          {
+              std::cout << "reconnecting unresponsive client " << id << " " << peer_addresses.at(id) << std::endl; 
+              port_offsets_[id] = port_offsets_.at(id) + 1;
+              // kill the connection and start a new one.
+              std::list<std::string> buffered_inbound_messages_  = conn_it.inbound_messages_;
+              std::list<OutboundMessage> buffered_outbound_messages_ = conn_it.outbound_messages_;
+              connections_.erase(id);
+              connect(my_id, id, peer_addresses.at(id), event_loop, port_offsets_[id]);
+              connections_.at(id).inbound_messages_ = buffered_inbound_messages_;
+              connections_.at(id).outbound_messages_ = buffered_outbound_messages_;
+              hello_seqnum_[id] = 0;
+              last_ack_[id] = 0;
+
+          }
+        } 
       }
     },
     [&] { return true; } );
@@ -109,29 +156,29 @@ void StorageServer::setup_ready_socket( EventLoop& event_loop )
     [] { return true; } );
 }
 
-void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>& ips, EventLoop& event_loop )
+// makes the hole punching and add to connections map
+void StorageServer::connect( const uint32_t my_id, const uint32_t id, std::string ip, EventLoop& event_loop, int port_offset )
 {
-  for ( auto& it : ips ) {
-    int id = it.first;
-    std::string ip = it.second;
 
     TCPSocket socket_send;
-    Address address_recv { ip, static_cast<uint16_t>( 10000 + id ) };
+    Address address_recv { ip, static_cast<uint16_t>( 10000 + id + port_offset ) };
     socket_send.set_reuseaddr();
     socket_send.set_blocking( false );
-    socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + my_id ) } );
+    socket_send.bind( { "0.0.0.0", static_cast<uint16_t>( 20000 + my_id + port_offset ) } );
     socket_send.connect( address_recv );
 
     TCPSocket socket_recv;
-    Address address_send { ip, static_cast<uint16_t>( 20000 + id ) };
+    Address address_send { ip, static_cast<uint16_t>( 20000 + id + port_offset ) };
     socket_recv.set_reuseaddr();
     socket_recv.set_blocking( false );
-    socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + my_id ) } );
+    socket_recv.bind( { "0.0.0.0", static_cast<uint16_t>( 10000 + my_id + port_offset) } );
     socket_recv.connect( address_send );
 
     auto r = connections_.emplace( std::piecewise_construct,
                                    std::forward_as_tuple( id ),
                                    std::forward_as_tuple( std::move( socket_recv ), std::move( socket_send ) ) );
+    
+
     if ( !r.second ) {
       assert( false );
     }
@@ -140,12 +187,15 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     std::cout << "opening up connection to remote socket at " << ip << std::endl;
 
     conn_it->second.install_rules( event_loop, [&, conn_it] {
-      DEBUGINFO( "died" );
+      DEBUGINFO( "died. however we will not erase this connection from the connection map, we will wait for the hello method to do this." );
       conn_it->second.socket_recv_.close();
       if ( conn_it->second.socket_send_.has_value() ) {
         conn_it->second.socket_send_->close();
       }
-      connections_.erase( conn_it );
+      //connections_.erase( conn_it );
+      for ( auto& it : conn_it->second.things_to_kill ) {
+      it.cancel();
+      }
     } );
 
     // msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
@@ -153,9 +203,11 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
     // std::string hello_message_string = hello_message.to_string();
     // conn_it->second.outbound_messages_.emplace_back( std::move( hello_message_string) );
 
-    event_loop.add_rule(
+    // it is important that this rule gets deleted when the connection dies, i.e. when I delete this thing.
+
+    conn_it->second.things_to_kill.push_back(event_loop.add_rule(
       "pop messages",
-      [&, conn_it] {
+      [&, conn_it, id] {
         while ( not conn_it->second.inbound_messages_.empty() ) {
           auto& conn = conn_it->second;
 
@@ -176,6 +228,21 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
 
             case OpCode::RemoteHello: {
               // do nothing
+              std::string seqnum = message.get_field(MF::SeqNum); 
+              
+              msg::Message ack_message { msg::OpCode::RemoteAck, 0 };
+              ack_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+              ack_message.set_field( msg::MessageField::SeqNum,  std::move(seqnum) );
+              conn.outbound_messages_.emplace_back(ack_message.to_string());
+              //
+              break;
+            }
+
+            case OpCode::RemoteAck:{
+
+              int seqnum = stoi(message.get_field(MF::SeqNum));
+              last_ack_[id] = seqnum;
+
               break;
             }
 
@@ -277,8 +344,8 @@ void StorageServer::connect( const uint32_t my_id, std::map<size_t, std::string>
           }
         }
       },
-      [&, conn_it] { return conn_it->second.inbound_messages_.size() > 0; } );
-  }
+      [&, conn_it] { return conn_it->second.inbound_messages_.size() > 0; } ));
+  
 }
 
 void StorageServer::install_rules( EventLoop& event_loop )
@@ -424,6 +491,15 @@ void StorageServer::install_rules( EventLoop& event_loop )
           }
         },
         [&, client_it] { return client_it->inbound_messages_.size() > 0; } ) );
+
+      /*
+      The tag generator is shared between all the clients. 
+      When a client tells the storage server to make a new remote request, that request comes with a unique tag.
+      The tag is enqueued into the ordered_tags queue of the local client while the request is pushed to the outbound messages of the remote connection.
+      All remote messages in the system are tagged. This is to ensure that remote messages come back in the right order to the local client.
+      Imagine local client issues request for object A in remote server 1 then object B in remote server 2.
+      We want to return to local client object A first and then object B, even though object B could first return to the local storage server if server 2 responds faster.
+      */
 
       rules_to_delete.push_back( event_loop.add_rule(
         "buffer to responses",

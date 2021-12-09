@@ -38,6 +38,7 @@ enum class OpCode : uint16_t
 
   // remote noop
   RemoteHello = 0xF,
+  RemoteAck = 0xE,
 
   // remote responses
   RemoteSuccess = 0x0,
@@ -63,6 +64,7 @@ enum class MessageField : uint8_t
   Object,
   Message,
   RemoteNode,
+  SeqNum,
 };
 
 struct Message
