@@ -34,6 +34,7 @@ private:
   std::map<int, int> hello_seqnum_ {};
   std::map<int, int> last_ack_ {};
   std::map<int, int> port_offsets_{};
+  std::map<int,bool> tried_with_current_port_offset_{};
 
   MessageHandler message_handler_ {};
   UniqueTagGenerator tag_generator_;
@@ -83,6 +84,7 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
       last_ack_.emplace(id,0);
       port_offsets_.emplace(id,0);
       this->connect( thread_id, id, ip , event_loop, 0 );
+      tried_with_current_port_offset_.emplace(id, true);
   }
 
   event_loop.add_rule(
@@ -115,10 +117,10 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
             conn_it.outbound_messages_.emplace_back( hello_message.to_string() );
             hello_seqnum_[id] = hello_seqnum + 1; 
 
-          } else 
+          } else if ( !tried_with_current_port_offset_[id] )
           {
               std::cout << "reconnecting unresponsive client " << id << " " << peer_addresses.at(id) << std::endl; 
-              port_offsets_[id] = port_offsets_.at(id) + 1;
+              
               // kill the connection and start a new one.
               std::list<std::string> buffered_inbound_messages_  = conn_it.inbound_messages_;
               std::list<OutboundMessage> buffered_outbound_messages_ = conn_it.outbound_messages_;
@@ -128,6 +130,8 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
               connections_.at(id).outbound_messages_ = buffered_outbound_messages_;
               hello_seqnum_[id] = 0;
               last_ack_[id] = 0;
+
+              tried_with_current_port_offset_[id] = true;
 
           }
         } 
@@ -246,6 +250,12 @@ void StorageServer::connect( const uint32_t my_id, const uint32_t id, std::strin
             case OpCode::RemoteHello: {
               // do nothing
               std::string seqnum = message.get_field(MF::SeqNum); 
+
+              if(stoi(seqnum) == 0)
+              {
+                  port_offsets_[id] = port_offsets_.at(id) + 1;
+                  tried_with_current_port_offset_[id] = false;
+              }
               
               msg::Message ack_message { msg::OpCode::RemoteAck, 0 };
               ack_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
