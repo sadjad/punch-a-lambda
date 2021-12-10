@@ -108,16 +108,14 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
 
           std::cout << hello_seqnum << " " << last_ack << std::endl;
 
-          if(false)
-          //if(last_ack > hello_seqnum - 2)
-          {
-            msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
-            hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
-            hello_message.set_field( msg::MessageField::SeqNum, std::to_string(hello_seqnum +1 ) );
-            conn_it.outbound_messages_.emplace_back( hello_message.to_string() );
-            hello_seqnum_[id] = hello_seqnum + 1; 
+          msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
+          hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
+          hello_message.set_field( msg::MessageField::SeqNum, std::to_string(hello_seqnum +1 ) );
+          conn_it.outbound_messages_.emplace_back( hello_message.to_string() );
+          hello_seqnum_[id] = hello_seqnum + 1;
 
-          } else if ( !tried_with_current_port_offset_[id] )
+          
+          if ( !tried_with_current_port_offset_[id] && last_ack < hello_seqnum -1 )
           {
               std::cout << "reconnecting unresponsive client " << id << " " << peer_addresses.at(id) << std::endl; 
               
