@@ -106,8 +106,8 @@ void StorageServer::connect_lambda( std::string coordinator_ip,
 
           std::cout << hello_seqnum << " " << last_ack << std::endl;
 
-          //if(false)
-          if(last_ack > hello_seqnum - 2)
+          if(false)
+          //if(last_ack > hello_seqnum - 2)
           {
             msg::Message hello_message { msg::OpCode::RemoteHello, 0 };
             hello_message.set_field( msg::MessageField::Name, std::to_string( my_id ) );
@@ -188,10 +188,27 @@ void StorageServer::connect( const uint32_t my_id, const uint32_t id, std::strin
 
     conn_it->second.install_rules( event_loop, [&, conn_it] {
       DEBUGINFO( "died. however we will not erase this connection from the connection map, we will wait for the hello method to do this." );
-      conn_it->second.socket_recv_.close();
-      if ( conn_it->second.socket_send_.has_value() ) {
-        conn_it->second.socket_send_->close();
+      try{
+          conn_it->second.socket_recv_.close();
+      } catch(...)
+      {
+        
       }
+        
+      if ( conn_it->second.socket_send_.has_value() ) {
+        try{
+            conn_it->second.socket_send_->close();
+        } catch(...)
+        {
+
+        }
+          
+      }
+
+      /*
+      instead of removing the connection, just kill all its rules. 
+      */
+
       //connections_.erase( conn_it );
       for ( auto& it : conn_it->second.things_to_kill ) {
       it.cancel();
